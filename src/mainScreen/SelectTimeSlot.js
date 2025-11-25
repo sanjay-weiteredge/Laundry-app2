@@ -729,11 +729,18 @@ const SelectTimeSlot = ({ navigation, route }) => {
                 style={styles.errorModalButton}
                 onPress={() => {
                   setShowNoAddressModal(false);
-                  navigation.navigate('Profile', { screen: 'Address' });
+                  // Navigate directly to the Address screen
+                  navigation.navigate('Profile', { 
+                    screen: 'Address',
+                    params: { 
+                      fromDeepLink: true 
+                    }
+                  });
                 }}
               >
                 <Text style={styles.errorModalButtonText}>Add Address</Text>
               </TouchableOpacity>
+              
             </View>
           </View>
         </View>

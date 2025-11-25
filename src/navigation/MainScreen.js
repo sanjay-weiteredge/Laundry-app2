@@ -77,18 +77,45 @@ const HomeStack = () => (
   </HomeStackNavigator.Navigator>
 );
 
-const ProfileStack = () => (
-  <ProfileStackNavigator.Navigator
-    screenOptions={({ navigation, route }) => ({
-      header: (props) => renderGradientHeader({ ...props, navigation, route }),
-    })}
-  >
+const ProfileStack = ({ navigation, route }) => {
+  // Reset to ProfileHome when the tab is pressed
+  React.useEffect(() => {
+    const unsubscribe = navigation.addListener('tabPress', (e) => {
+      // Prevent default behavior
+      e.preventDefault();
+      
+      // Reset to ProfileHome when the tab is pressed
+      navigation.navigate('Profile', { 
+        screen: 'ProfileHome',
+        params: { 
+          resetStack: true 
+        }
+      });
+    });
+
+    return unsubscribe;
+  }, [navigation]);
+
+  // Check if we're coming from a deep link
+  const isDeepLink = route.params?.fromDeepLink;
+  
+  return (
+    <ProfileStackNavigator.Navigator
+      initialRouteName={isDeepLink ? 'Address' : 'ProfileHome'}
+      screenOptions={({ navigation, route }) => ({
+        header: (props) => renderGradientHeader({ ...props, navigation, route }),
+        headerShown: true,
+        headerBackTitle: 'Back',
+      })}
+    >
     <ProfileStackNavigator.Screen
       name="ProfileHome"
       component={ProfileScreen}
       options={{
         title: 'Profile',
         headerTitleAlign: 'center',
+        headerShown: true,
+        headerBackTitle: 'Back',
       }}
     />
     <ProfileStackNavigator.Screen
@@ -97,6 +124,8 @@ const ProfileStack = () => (
       options={{
         title: 'My Orders',
         headerTitleAlign: 'center',
+        headerShown: true,
+        headerBackTitle: 'Back',
       }}
     />
     <ProfileStackNavigator.Screen
@@ -105,6 +134,8 @@ const ProfileStack = () => (
       options={{
         title: 'Saved Addresses',
         headerTitleAlign: 'center',
+        headerShown: true,
+        headerBackTitle: 'Back',
       }}
     />
     <ProfileStackNavigator.Screen
@@ -147,8 +178,9 @@ const ProfileStack = () => (
         headerTitleAlign: 'center',
       }}
     />
-  </ProfileStackNavigator.Navigator>
-);
+    </ProfileStackNavigator.Navigator>
+  );
+};
 
 const CustomTabBar = ({ state, descriptors, navigation }) => {
   return (
