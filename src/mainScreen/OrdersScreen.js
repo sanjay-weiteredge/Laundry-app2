@@ -102,35 +102,61 @@ const OrdersScreen = () => {
     return `${dateStr}, ${startTime} - ${endTime}`;
   };
 
-  const OrderItem = ({ order }) => (
-    <View style={styles.orderCard}>
-      <View style={styles.orderHeader}>
-        <View>
-          <Text style={styles.orderNumber}>Order #{order.orderId}</Text>
-          <Text style={styles.orderDate}>{formatDate(order.createdAt)}</Text>
-        </View>
-        <View style={[styles.statusBadge, { backgroundColor: getStatusColor(order.status) }]} >
-          <Text style={styles.statusText}>{order.status.charAt(0).toUpperCase() + order.status.slice(1)}</Text>
-        </View>
-      </View>
+  const OrderItem = ({ order }) => {
+    // Helper function to render services list
+    const renderServices = (services) => {
+      if (!services || !Array.isArray(services)) return null;
       
-      <View style={styles.orderContent}>
-        <View style={styles.serviceInfo}>
-          <Text style={styles.serviceName}>{order.serviceName}</Text>
-          <Text style={styles.storeName}>{order.storeName}</Text>
+      return (
+        <View style={styles.servicesContainer}>
+          {services.map((service, index) => (
+            <View key={`${service.id}-${index}`} style={styles.serviceItem}>
+              <Text style={styles.serviceName}>
+                • {service.quantity}x {service.name}
+              </Text>
+              {service.description && (
+                <Text style={styles.serviceDescription} numberOfLines={1}>
+                  {service.description}
+                </Text>
+              )}
+            </View>
+          ))}
+        </View>
+      );
+    };
+
+    return (
+      <View style={styles.orderCard}>
+        <View style={styles.orderHeader}>
+          <View>
+            <Text style={styles.orderNumber}>Order #{order.orderId}</Text>
+            <Text style={styles.orderDate}>{formatDate(order.createdAt)}</Text>
+          </View>
+          <View style={[styles.statusBadge, { backgroundColor: getStatusColor(order.status) }]} >
+            <Text style={styles.statusText}>{order.status.charAt(0).toUpperCase() + order.status.slice(1)}</Text>
+          </View>
         </View>
         
-        {order.pickupSlot && (
-          <View style={styles.scheduleInfo}>
-            <Ionicons name="time-outline" size={14} color={colors.primaryText} />
-            <Text style={styles.scheduleText}>
-              Pickup: {formatTimeRange(order.pickupSlot.start, order.pickupSlot.end)}
-            </Text>
+        <View style={styles.orderContent}>
+          <View style={styles.serviceInfo}>
+            {order.storeName && (
+              <Text style={styles.storeName}>{order.storeName}</Text>
+            )}
+            {renderServices(order.services || [])}
           </View>
-        )}
+          
+          {order.pickupSlot && (
+            <View style={styles.scheduleInfo}>
+              <Ionicons name="time-outline" size={14} color={colors.primaryText} />
+              <Text style={styles.scheduleText}>
+                Pickup: {formatTimeRange(order.pickupSlot.start, order.pickupSlot.end)}
+              </Text>
+            </View>
+          )}
+        </View>
       </View>
-    </View>
-  );
+    );
+  };
 
   if (loading) {
     return (
@@ -352,7 +378,25 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   orderContent: {
+    marginTop: 12,
+  },
+  servicesContainer: {
     marginTop: 8,
+    marginBottom: 4,
+  },
+  serviceItem: {
+    marginBottom: 6,
+  },
+  serviceName: {
+    fontSize: 15,
+    color: colors.primaryText,
+    fontWeight: '500',
+  },
+  serviceDescription: {
+    fontSize: 12,
+    color: colors.secondaryText,
+    marginLeft: 12,
+    marginTop: 2,
   },
   serviceInfo: {
     marginBottom: 8,

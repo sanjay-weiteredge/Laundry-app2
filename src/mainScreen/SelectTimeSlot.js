@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, SafeAreaView, StatusBar, Dimensions, Alert, ActivityIndicator, Modal, Animated } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -25,7 +25,8 @@ const SelectTimeSlot = ({ navigation, route }) => {
   const [errorMessage, setErrorMessage] = useState('');
   const modalAnimValue = useRef(new Animated.Value(0)).current;
   
-  const { service, isReschedule, orderId, onRescheduleComplete } = route.params || {};
+  const { service, services: servicesParam, isReschedule, orderId, onRescheduleComplete } = route.params || {};
+  const services = servicesParam || (service ? [service] : []);
   
   
   useEffect(() => {
@@ -39,17 +40,49 @@ const SelectTimeSlot = ({ navigation, route }) => {
   const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   
   
-  const showSuccessModalAnimated = (data) => {
-    console.log('showSuccessModalAnimated called with data:', data);
-    setBookingData(data);
-    setShowSuccessModal(true);
-    console.log('showSuccessModal set to true');
-    Animated.timing(modalAnimValue, {
-      toValue: 1,
-      duration: 500,
-      useNativeDriver: true,
-    }).start();
-  };
+  const showSuccessModalAnimated = useCallback((data) => {
+    console.log('showSuccessModalAnimated called with data:', JSON.stringify(data, null, 2));
+    
+    // Make sure we have the minimum required data
+    if (!data) {
+      console.error('No data provided to showSuccessModalAnimated');
+      setErrorMessage('No booking data received');
+      setShowErrorModal(true);
+      return;
+    }
+    
+    // Ensure we have a valid order ID
+    const bookingDataWithDefaults = {
+      ...data,
+      orderId: data.orderId || 'N/A',
+      store: data.store || { name: 'N/A', distance: 'N/A' },
+      pickupSlot: data.pickupSlot || { start: null, end: null }
+    };
+    
+    console.log('Setting booking data and showing modal');
+    
+    // Set the booking data first
+    setBookingData(bookingDataWithDefaults);
+    
+    // Reset animation value
+    modalAnimValue.setValue(0);
+    
+    // Show the modal in the next tick to ensure state is updated
+    requestAnimationFrame(() => {
+      setShowSuccessModal(true);
+      
+      // Animate the modal in
+      Animated.timing(modalAnimValue, {
+        toValue: 1,
+        duration: 300,
+        useNativeDriver: true,
+      }).start(({ finished }) => {
+        if (!finished) {
+          console.warn('Modal animation was interrupted');
+        }
+      });
+    });
+  }, []);
 
   const hideSuccessModal = () => {
     Animated.timing(modalAnimValue, {
@@ -62,42 +95,75 @@ const SelectTimeSlot = ({ navigation, route }) => {
     });
   };
 
-  const fetchTimeSlots = useCallback(async () => {
-    if (!service?.id) {
-      console.log('No service selected');
+  const fetchTimeSlots = useCallback(async (date, serviceId) => {
+    let isMounted = true;
+    
+    if (!serviceId) {
+      console.log('No service ID provided');
       return;
     }
     
     try {
-      setLoadingSlots(true);
+      if (isMounted) {
+        setLoadingSlots(true);
+        setTimeSlots([]);
+      }
+      
       const token = await AsyncStorage.getItem('userToken');
       if (!token) {
         throw new Error('Please log in again');
       }
       
-      const dateStr = selectedDate.toISOString().split('T')[0];
-      const slots = await getTimeSlots(dateStr, service.id, token);
+      const dateStr = date.toISOString().split('T')[0];
+      console.log(`Fetching time slots for service ${serviceId} on ${dateStr}`);
       
- 
+      const slots = await getTimeSlots(dateStr, serviceId, token);
+      
+      if (!isMounted) return;
+      
+      if (!Array.isArray(slots)) {
+        throw new Error('Invalid time slots data received');
+      }
+      
       const mappedSlots = slots.map((slot, index) => ({
-        id: index + 1,
-        time: slot.display,
+        id: `${dateStr}-${index}-${Date.now()}`,
+        time: slot.display || `${slot.start} - ${slot.end}`,
         start: slot.start,
         end: slot.end,
-        available: slot.isAvailable
+        available: slot.isAvailable !== false
       }));
       
+      if (mappedSlots.length === 0) {
+        console.log('No time slots available for the selected date');
+      }
+      
       setTimeSlots(mappedSlots);
-      console.log('Mapped time slots:', mappedSlots);
     } catch (error) {
       console.error('Error fetching time slots:', error);
-      setErrorMessage('Failed to load time slots. Please try again.');
-      setShowErrorModal(true);
-      setTimeSlots([]);
+      if (isMounted) {
+        setErrorMessage(
+          error.response?.data?.message || 
+          error.message || 
+          'Failed to load time slots. Please try again.'
+        );
+        setShowErrorModal(true);
+        setTimeSlots([]);
+      }
     } finally {
-      setLoadingSlots(false);
+      if (isMounted) {
+        setLoadingSlots(false);
+      }
     }
-  }, [selectedDate, service]);
+    
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+  
+  // Memoize the service ID to prevent unnecessary re-renders
+  const serviceId = useMemo(() => {
+    return services?.[0]?.id;
+  }, [services]);
 
   useEffect(() => {
     const next7Days = [];
@@ -110,16 +176,36 @@ const SelectTimeSlot = ({ navigation, route }) => {
   }, []);
   
  
+  // Effect to load time slots when date or service changes
   useEffect(() => {
-    if (service?.id) {
-      fetchTimeSlots();
-    }
-  }, [selectedDate, service?.id, fetchTimeSlots]);
+    let isMounted = true;
+    
+    if (!serviceId) return;
+    
+    const loadTimeSlots = async () => {
+      try {
+        await fetchTimeSlots(selectedDate, serviceId);
+      } catch (error) {
+        console.error('Error in loadTimeSlots effect:', error);
+        if (isMounted) {
+          setErrorMessage('Failed to load time slots. Please try again.');
+          setShowErrorModal(true);
+        }
+      }
+    };
+    
+    loadTimeSlots();
+    
+    return () => {
+      isMounted = false;
+    };
+  }, [selectedDate, serviceId, fetchTimeSlots]);
   
 
   
   const handleConfirmBooking = async () => {
-    if (!selectedSlot || !service) {
+    // Validate input
+    if (!selectedSlot) {
       setErrorMessage('Please select a time slot');
       setShowErrorModal(true);
       return;
@@ -130,52 +216,117 @@ const SelectTimeSlot = ({ navigation, route }) => {
       
       const token = await AsyncStorage.getItem('userToken');
       if (!token) {
-        throw new Error('Please log in again');
+        throw new Error('Your session has expired. Please log in again.');
       }
       
-      if (isReschedule) {
-       
-        console.log('Rescheduling order:', orderId, 'with slot:', selectedSlot);
+      if (isReschedule && route.params?.orderId) {
+        const { orderId, currentOrder, onRescheduleComplete } = route.params;
         
-        const rescheduleData = {
-          pickupSlotStart: selectedSlot.start,
-          pickupSlotEnd: selectedSlot.end
-        };
-        
-        const rescheduleResult = await rescheduleOrder(orderId, rescheduleData.pickupSlotStart, rescheduleData.pickupSlotEnd, token);
-        console.log('Reschedule API Response:', rescheduleResult);
-        
-        // Call the callback function if provided
-        if (onRescheduleComplete && typeof onRescheduleComplete === 'function') {
-          onRescheduleComplete(orderId, selectedSlot);
+        try {
+          const rescheduleResult = await rescheduleOrder(
+            orderId,
+            selectedSlot.start,
+            selectedSlot.end,
+            token
+          );
+          
+          console.log('Reschedule API Response:', rescheduleResult);
+          
+          if (onRescheduleComplete) {
+            // Create updated order with new time slot
+            const updatedOrder = {
+              ...currentOrder,
+              pickupSlot: {
+                ...currentOrder.pickupSlot,
+                start: selectedSlot.start,
+                end: selectedSlot.end
+              },
+              updatedAt: new Date().toISOString()
+            };
+            
+            onRescheduleComplete(updatedOrder);
+          }
+          
+          // Navigate back after a short delay
+          setTimeout(() => {
+            navigation.goBack();
+          }, 500);
+          
+        } catch (error) {
+          console.error('Reschedule error:', error);
+          throw error;
         }
-        
-        setShowRescheduleSuccessModal(true);
       } else {
         // Handle new booking
-        const addresses = await fetchAddresses();
+        const addresses = await fetchAddresses(token);
         if (!addresses || addresses.length === 0) {
           setShowNoAddressModal(true);
           return;
         }
         
-        const selectedAddress = addresses[0];
-        
+        const addressId = addresses[0].id;
+
         const bookingData = {
-          serviceId: service.id,
+          services: services.map(s => ({
+            id: s.id,
+            quantity: s.quantity || 1
+          })),
           slotStart: selectedSlot.start,
           slotEnd: selectedSlot.end,
-          addressId: selectedAddress.id,
-          notes: '' 
+          addressId: addressId,
+          notes: ''
         };
+
+        console.log('Sending booking request with data:', JSON.stringify(bookingData, null, 2));
         
-        console.log('Making booking with data:', bookingData);
-        
-        const bookingResult = await bookService(bookingData, token);
-        console.log('Booking API Response:', bookingResult);
-        
-        // Show animated success modal instead of alert
-        showSuccessModalAnimated(bookingResult);
+        try {
+          const response = await bookService(bookingData, token);
+          console.log('Raw API Response:', JSON.stringify(response, null, 2));
+          
+          if (!response) {
+            throw new Error('No response received from server');
+          }
+          
+          // Handle both response.data and direct response (in case the API returns data directly)
+          const responseData = response.data || response;
+          
+          if (!responseData) {
+            throw new Error('No data in response');
+          }
+          
+          console.log('Response data:', JSON.stringify(responseData, null, 2));
+          
+          // Prepare order data for the success modal
+          const orderData = {
+            orderId: responseData.id || 'N/A',
+            status: responseData.order_status || 'pending',
+            pickupSlot: {
+              start: responseData.pickup_scheduled_at,
+              end: responseData.pickup_slot_end || responseData.pickupSlot?.end
+            },
+            store: responseData.store || { 
+              name: responseData.store?.name || 'N/A', 
+              distance: responseData.store?.distance || 'N/A',
+              ...responseData.store
+            },
+            items: responseData.items || []
+          };
+          
+          console.log('Processed order data for modal:', JSON.stringify(orderData, null, 2));
+          
+          // Show success modal with a small delay to ensure state updates properly
+          setTimeout(() => {
+            showSuccessModalAnimated(orderData);
+          }, 100);
+          
+        } catch (error) {
+          console.error('Error in booking process:', {
+            error: error.message,
+            response: error.response?.data,
+            stack: error.stack
+          });
+          throw error;
+        }
       }
       
     } catch (error) {
@@ -264,21 +415,110 @@ const SelectTimeSlot = ({ navigation, route }) => {
     );
   };
 
+  const getServiceIcon = (serviceType) => {
+    switch(serviceType?.toLowerCase()) {
+      case 'washing':
+        return 'water-outline';
+      case 'dry clean':
+        return 'sunny-outline';
+      case 'ironing':
+        return 'shirt-outline';
+      case 'laundry':
+        return 'shirt-outline';
+      default:
+        return 'shirt-outline';
+    }
+  };
+
+  const renderServiceDetails = () => {
+    if (services.length === 0) return null;
+    
+    const totalItems = services.reduce((sum, s) => sum + (s.quantity || 1), 0);
+    const totalPrice = services.reduce((sum, s) => sum + ((s.price || 0) * (s.quantity || 1)), 0);
+    
+    return (
+      <View style={styles.serviceDetailsContainer}>
+        <View style={styles.sectionHeader}>
+          <View style={styles.sectionTitleContainer}>
+            <Text style={styles.sectionTitle}>Selected Services</Text>
+          </View>
+          <View style={styles.summaryBadge}>
+            <Text style={styles.summaryText}>
+              {totalItems === 1 ? 'Total item' : 'Total items'} {totalItems} 
+            </Text>
+          </View>
+        </View>
+        
+        <View style={styles.servicesList}>
+          {services.map((service, index) => (
+            <View key={`${service.id || index}`} style={styles.serviceItem}>
+              <View style={styles.serviceInfo1}>
+              
+                <Text style={styles.serviceName} numberOfLines={1}>
+                  {service.title || 'Laundry Service'}
+                </Text>
+                <View style={styles.quantityBadge}>
+                <Text style={styles.quantityText}>x{service.quantity || 1}</Text>
+              </View>
+              </View>
+              
+            </View>
+          ))}
+        </View>
+        
+        {totalPrice > 0 && (
+          <View style={styles.totalContainer}>
+            <Text style={styles.totalText}>Total:</Text>
+            <Text style={styles.totalPrice}>₹{totalPrice}</Text>
+          </View>
+        )}
+      </View>
+    );
+  };
+
   const BookingSuccessModal = () => {
     console.log('BookingSuccessModal rendering, showSuccessModal:', showSuccessModal, 'bookingData:', bookingData);
-    if (!showSuccessModal || !bookingData) return null;
+    
+    if (!showSuccessModal || !bookingData) {
+      console.log('Modal not showing because:', { showSuccessModal, hasBookingData: !!bookingData });
+      return null;
+    }
+    
+    // Extract services from booking data
+    const services = bookingData.items || [];
+    
+    // Helper function to render service items
+    const renderServiceItem = (item, index) => {
+      if (!item || !item.service) return null;
+      
+      return (
+        <View key={`service-${item.id || index}`} style={styles.serviceItem}>
+          <Text style={styles.serviceName}>
+            {item.service.name || `Service #${item.id}`}
+          </Text>
+          <Text style={styles.serviceQuantity}>x{item.quantity || 1}</Text>
+        </View>
+      );
+    };
 
-    const formatDateTime = (dateString) => {
+      const formatDateTime = (dateString) => {
       if (!dateString) return 'N/A';
-      const date = new Date(dateString);
-      return date.toLocaleString('en-IN', { 
-        day: 'numeric', 
-        month: 'short', 
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-        hour12: true
-      });
+      try {
+        const date = new Date(dateString);
+        if (isNaN(date.getTime())) return 'Invalid date';
+        return date.toLocaleString('en-IN', { 
+          day: 'numeric', 
+          month: 'short', 
+          year: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: true,
+          timeZone: 'Asia/Kolkata'
+        });
+      } catch (error) {
+        console.error('Error formatting date:', error);
+        return 'Date error';
+      }
     };
 
     const formatTimeRange = (startDateString, endDateString) => {
@@ -345,9 +585,15 @@ const SelectTimeSlot = ({ navigation, route }) => {
                 <Text style={styles.detailValue}>#{bookingData.orderId}</Text>
               </View>
               
-              <View style={styles.detailRow}>
-                <Text style={styles.detailLabel}>Service:</Text>
-                <Text style={styles.detailValue}>{service?.name || 'Service'}</Text>
+              <View style={styles.detailSection}>
+                <Text style={styles.sectionTitle}>Services</Text>
+                <View style={styles.servicesList}>
+                  {services.length > 0 ? (
+                    services.map((item, index) => renderServiceItem(item, index))
+                  ) : (
+                    <Text style={styles.noServicesText}>No services selected</Text>
+                  )}
+                </View>
               </View>
               
               <View style={styles.detailRow}>
@@ -355,15 +601,17 @@ const SelectTimeSlot = ({ navigation, route }) => {
                 <Text style={styles.detailValue}>{bookingData.store?.name || 'N/A'}</Text>
               </View>
               
-              <View style={styles.detailRow}>
+              {/* <View style={styles.detailRow}>
                 <Text style={styles.detailLabel}>Distance:</Text>
                 <Text style={styles.detailValue}>{bookingData.store?.distance || 'N/A'}</Text>
-              </View>
+              </View> */}
               
               <View style={styles.detailRow}>
                 <Text style={styles.detailLabel}>Pickup Time:</Text>
                 <Text style={styles.detailValue}>
-                  {formatTimeRange(bookingData.pickupSlot?.start, bookingData.pickupSlot?.end)}
+                  {bookingData.pickupSlot?.start && bookingData.pickupSlot?.end 
+                    ? formatTimeRange(bookingData.pickupSlot.start, bookingData.pickupSlot.end)
+                    : 'Time not specified'}
                 </Text>
               </View>
             </View>
@@ -392,11 +640,13 @@ const SelectTimeSlot = ({ navigation, route }) => {
         <ScrollView contentContainerStyle={styles.scrollContent}>
        
 
-          <View style={styles.serviceInfo}>
-            <Text style={styles.serviceName}>{service?.name}</Text>
+       
+
+          {renderServiceDetails()}
+             <View style={{marginTop: 20}}>
+            {/* <Text style={styles.serviceName}>{services.map(s => s.title || 'Laundry Service').join(', ')}</Text> */}
             <Text style={styles.serviceDescription}>Select a preferred date and time slot</Text>
           </View>
-
           <Text style={styles.sectionTitle}>Select Date</Text>
           <ScrollView 
             horizontal 
@@ -604,7 +854,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: colors.primaryText,
     marginBottom: 20,
-    marginLeft: 5,
+    
   },
   timeSlotsGrid: {
     flexDirection: 'row',
@@ -747,6 +997,93 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 16,
     marginBottom: 24,
+    serviceDetailsContainer: {
+      marginBottom: 20,
+      width: '100%',
+      backgroundColor: '#fff',
+      borderRadius: 16,
+      padding: 16,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.05,
+      shadowRadius: 6,
+      elevation: 2,
+    },
+    sectionHeader: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginBottom: 12,
+    },
+    sectionTitleContainer: {
+      flexDirection: 'row',
+      alignItems: 'center',
+    },
+    sectionIcon: {
+      marginRight: 10,
+    },
+    sectionTitle: {
+      fontSize: 16,
+      fontWeight: '600',
+      color: colors.primaryText,
+    },
+    summaryBadge: {
+      backgroundColor: 'rgba(240, 131, 131, 0.1)',
+      paddingHorizontal: 12,
+      paddingVertical: 4,
+      borderRadius: 12,
+    },
+    summaryText: {
+      color: colors.primary,
+      fontSize: 12,
+      fontWeight: '600',
+    },
+    servicesList: {
+      width: '100%',
+    },
+    serviceItem: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      paddingVertical: 10,
+      borderBottomWidth: 1,
+      borderBottomColor: '#f0f0f0',
+    },
+    serviceInfo: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      flex: 1,
+    },
+    serviceQuantity: {
+      fontSize: 15,
+      fontWeight: '600',
+      color: colors.primary,
+      backgroundColor: 'rgba(240, 131, 131, 0.2)',
+      paddingHorizontal: 10,
+      paddingVertical: 3,
+      borderRadius: 10,
+      minWidth: 30,
+      textAlign: 'center',
+    },
+    noServicesText: {
+      color: colors.secondaryText,
+      fontStyle: 'italic',
+      textAlign: 'center',
+      marginVertical: 10,
+    },
+    detailSection: {
+      width: '100%',
+      marginBottom: 15,
+    },
+    sectionTitle: {
+      fontSize: 16,
+      fontWeight: '600',
+      color: colors.primary,
+      marginBottom: 10,
+      paddingBottom: 5,
+      borderBottomWidth: 1,
+      borderBottomColor: '#f0f0f0',
+    },
   },
   detailRow: {
     flexDirection: 'row',
@@ -905,6 +1242,31 @@ const styles = StyleSheet.create({
   successModalButtonText: {
     color: '#fff',
     fontSize: 16,
+    fontWeight: '600',
+  },
+  serviceInfo1: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignSelf:'flex-start'
+   
+  },
+  serviceName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: colors.primaryText,
+  },
+  quantityBadge: {
+    backgroundColor: 'rgba(240, 131, 131, 0.2)',
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+    borderRadius: 10,
+    maxWidth: 50,
+    textAlign: 'center',
+    marginLeft:10
+  },
+  quantityText: {
+    color: colors.primary,
+    fontSize: 15,
     fontWeight: '600',
   },
 });

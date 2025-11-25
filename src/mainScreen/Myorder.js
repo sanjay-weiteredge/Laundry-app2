@@ -26,6 +26,7 @@ const Myorder = ({ navigation }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [selectedOrder, setSelectedOrder] = useState(null);
+  const [rescheduleSuccess, setRescheduleSuccess] = useState(false);
   const [showActionModal, setShowActionModal] = useState(false);
   const [actionType, setActionType] = useState(null); // 'cancel' or 'reschedule'
   const [showCancelSuccessModal, setShowCancelSuccessModal] = useState(false);
@@ -48,6 +49,7 @@ const Myorder = ({ navigation }) => {
       
 
       const ordersData = await getUserOrders(token);
+      console.log('Orders data:', ordersData[0].services);
 
       
       // Ensure we always set an array, handle different response formats
@@ -189,12 +191,65 @@ const Myorder = ({ navigation }) => {
 
   const handleRescheduleOrder = () => {
     hideActionModal();
-  
-    navigation.navigate('SelectTimeSlot', { 
-      service: { id: selectedOrder?.serviceId || 1, name: selectedOrder?.serviceName },
+    
+    if (!selectedOrder) {
+      Alert.alert('Error', 'No order selected for rescheduling');
+      return;
+    }
+
+    navigation.navigate('SelectTimeSlot', {
       isReschedule: true,
-      orderId: selectedOrder?.orderId
+      orderId: selectedOrder.orderId,
+      currentOrder: selectedOrder,
+      service: {
+        id: selectedOrder.services?.[0]?.[0]?.id || 1,
+        name: selectedOrder.services?.[0]?.[0]?.name || 'Laundry Service'
+      },
+      onRescheduleComplete: (updatedOrder) => {
+        // Update the local state with the rescheduled order
+        setOrders(prevOrders => 
+          prevOrders.map(order => 
+            order.orderId === updatedOrder.orderId 
+              ? { 
+                  ...order, 
+                  pickupSlot: {
+                    ...order.pickupSlot,
+                    start: updatedOrder.pickupSlot.start,
+                    end: updatedOrder.pickupSlot.end
+                  },
+                  updatedAt: updatedOrder.updatedAt
+                }
+              : order
+          )
+        );
+        
+        // Show success modal
+        setRescheduleSuccess(true);
+        // Auto-hide the modal after 2 seconds
+        setTimeout(() => {
+          setRescheduleSuccess(false);
+        }, 2000);
+      }
     });
+  };
+
+  const renderServices = (services) => {
+    if (!services || !Array.isArray(services)) return null;
+    
+    return (
+      <View style={styles.servicesContainer}>
+        {services.map((service, index) => (
+          <View key={`${service.id}-${index}`} style={styles.serviceItem}>
+            <Text style={styles.serviceName}>
+              {service.name} x{service.quantity}
+            </Text>
+            <Text style={styles.serviceDescription} numberOfLines={1}>
+              {service.description}
+            </Text>
+          </View>
+        ))}
+      </View>
+    );
   };
 
   const OrderItem = ({ order }) => (
@@ -211,7 +266,7 @@ const Myorder = ({ navigation }) => {
       
       <View style={styles.orderContent}>
         <View style={styles.serviceInfo}>
-          <Text style={styles.serviceName}>{order.serviceName}</Text>
+          {renderServices(order.services)}
           <Text style={styles.storeName}>{order.storeName}</Text>
         </View>
         
@@ -410,10 +465,28 @@ const Myorder = ({ navigation }) => {
 
 
 
+  // Success Modal Component
+  const SuccessModal = () => (
+    <Modal
+      transparent={true}
+      animationType="fade"
+      visible={rescheduleSuccess}
+      onRequestClose={() => setRescheduleSuccess(false)}
+    >
+      <View style={styles.modalOverlay}>
+        <View style={styles.successModal}>
+          <Ionicons name="checkmark-circle" size={50} color="#4CAF50" />
+          <Text style={styles.successText}>Order Rescheduled Successfully!</Text>
+        </View>
+      </View>
+    </Modal>
+  );
+
   return (
     <>
       <CancelSuccessModal />
       <ActionModal />
+      <SuccessModal />
       <SafeAreaView style={styles.container}>
 
         
@@ -539,15 +612,31 @@ const styles = StyleSheet.create({
     padding: 20,
   },
   orderCard: {
-    backgroundColor: colors.cardcolor,
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 16,
+    backgroundColor: '#fff',
+    borderRadius: 10,
+    padding: 15,
+    marginBottom: 15,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 3,
+  },
+  servicesContainer: {
+    marginBottom: 10,
+  },
+  serviceItem: {
+    marginBottom: 8,
+  },
+  serviceName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#333',
+  },
+  serviceDescription: {
+    fontSize: 12,
+    color: '#666',
+    marginTop: 2,
   },
   orderHeader: {
     flexDirection: 'row',
@@ -815,6 +904,57 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontWeight: '600',
+    textAlign: 'center',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  successModal: {
+    backgroundColor: 'white',
+    borderRadius: 10,
+    padding: 25,
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '90%',
+    maxWidth: 300,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 5,
+  },
+  successText: {
+    color: '#333',
+    fontSize: 16,
+    fontWeight: '600',
+    marginTop: 15,
+    textAlign: 'center',
+    lineHeight: 22,
+  },
+  successText: {
+    color: 'white',
+    fontSize: 16,
+    marginTop: 10,
+    textAlign: 'center',
+  },
+  successModal: {
+    backgroundColor: 'white',
+    borderRadius: 10,
+    padding: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '80%',
+    elevation: 5,
+  },
+  successText: {
+    color: '#333',
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginTop: 15,
     textAlign: 'center',
   },
 });
