@@ -3,6 +3,9 @@
   "license": "0BSD",
   "version": "1.0.0",
   "main": "index.js",
+  "overrides": {
+    "@react-native-async-storage/async-storage": "2.2.0"
+  },
   "scripts": {
     "start": "expo start",
     "android": "expo start --android",
@@ -11,7 +14,7 @@
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",
-    "@react-native-async-storage/async-storage": "^2.2.0",
+    "@react-native-async-storage/async-storage": "2.2.0",
     "@react-native-firebase/app": "^23.5.0",
     "@react-native-firebase/auth": "^23.5.0",
     "@react-native-picker/picker": "^2.11.4",
