@@ -1,8 +1,19 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
 
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, Alert, TouchableWithoutFeedback, Keyboard } from 'react-native';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  TouchableOpacity,
+  Image,
+  Alert, TouchableWithoutFeedback, Keyboard,
+  Modal,
+  ActivityIndicator,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import colors from '../component/color';
 import images from '../component/image';
@@ -10,6 +21,37 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getProfile } from '../services/userAuth';
 import { fetchAddresses } from '../services/address';
 import { fetchAllServices } from '../services/services';
+import * as Location from 'expo-location';
+
+const getAddressIdentifier = (address) =>
+  address?.id?.toString() ??
+  address?.address_id?.toString() ??
+  address?.addressId?.toString() ??
+  address?._id?.toString() ??
+  address?.uuid ??
+  null;
+
+const formatAddressLine = (address) => {
+  if (!address) {
+    return '';
+  }
+  const primary = [address?.house, address?.street].filter(Boolean).join(', ');
+  const secondary = [address?.city, address?.state, address?.pincode || address?.postal_code]
+    .filter(Boolean)
+    .join(', ');
+  return primary || secondary || address?.address_line || address?.addressLine || 'Unnamed location';
+};
+
+const getAddressIcon = (label = 'Home') => {
+  switch (label) {
+    case 'Work':
+      return 'briefcase-outline';
+    case 'Other':
+      return 'location-outline';
+    default:
+      return 'home-outline';
+  }
+};
 const HomeScreen = ({ navigation }) => {
 
   const [loading, setLoading] = useState(false);
@@ -45,6 +87,12 @@ const HomeScreen = ({ navigation }) => {
       };
     });
   };
+  const [locationModalVisible, setLocationModalVisible] = useState(false);
+  const [selectedAddress, setSelectedAddress] = useState(null);
+  const [detectedLocation, setDetectedLocation] = useState('');
+  const [detectingLocation, setDetectingLocation] = useState(false);
+  const [locationError, setLocationError] = useState('');
+  const [detectedMetaLine, setDetectedMetaLine] = useState('');
 
   const handleServiceSelect = (service) => {
     setSelectedServices(prev => ({
@@ -59,13 +107,30 @@ const HomeScreen = ({ navigation }) => {
   const handleContinue = () => {
     const selected = Object.values(selectedServices).filter(s => s.quantity > 0);
     if (selected.length > 0) {
-      navigation.navigate('SelectTimeSlot', { services: selected });
+      navigation.navigate('SelectTimeSlot', { services: selected, selectedAddress });
     }
   };
 
   const handleSeeAllPress = () => {
     setShowPromoCard(!showPromoCard);
   };
+  
+  const resolvePreferredAddress = useCallback(
+    (addresses) => {
+      if (!Array.isArray(addresses) || addresses.length === 0) {
+        return null;
+      }
+      const preferred =
+        addresses.find((addr) => addr?.is_default || addr?.isDefault) || addresses[0];
+      const prevId = getAddressIdentifier(selectedAddress);
+      const exists =
+        prevId && addresses.some((addr) => getAddressIdentifier(addr) === prevId);
+      return exists
+        ? addresses.find((addr) => getAddressIdentifier(addr) === prevId)
+        : preferred;
+    },
+    [selectedAddress]
+  );
   const fetchUserProfile = useCallback(async () => {
     try {
       setLoading(true);
@@ -123,10 +188,47 @@ const HomeScreen = ({ navigation }) => {
     }
   }, []);
 
+  const detectCurrentLocation = useCallback(async () => {
+    try {
+      setDetectingLocation(true);
+      setLocationError('');
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        setLocationError('Location permission denied');
+        setDetectedLocation('');
+        return;
+      }
+      const position = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Balanced,
+      });
+      const reverse = await Location.reverseGeocodeAsync(position.coords);
+      if (reverse.length > 0) {
+        const place = reverse[0];
+        const description = [place.name, place.street].filter(Boolean).join(', ');
+        setDetectedLocation(description || 'Current location detected');
+        const meta = [place.city ?? place.subregion, place.region, place.postalCode]
+          .filter(Boolean)
+          .join(' ');
+        setDetectedMetaLine(meta);
+      } else {
+        setDetectedLocation('Current location detected');
+        setDetectedMetaLine('');
+      }
+    } catch (error) {
+      console.error('Location detection error:', error);
+      setLocationError('Unable to fetch your location');
+      setDetectedLocation('');
+      setDetectedMetaLine('');
+    } finally {
+      setDetectingLocation(false);
+    }
+  }, []);
+
   useEffect(() => {
     fetchUserProfile();
     fetchServices();
-  }, []);
+    detectCurrentLocation();
+  }, [fetchUserProfile, fetchServices, detectCurrentLocation]);
 
   
   useFocusEffect(
@@ -134,6 +236,7 @@ const HomeScreen = ({ navigation }) => {
       fetchUserProfile();
       fetchServices();
       fetchSavedAddresses();
+      detectCurrentLocation();
       
     
       if (navigation?.route?.params?.hidePromo) {
@@ -141,8 +244,24 @@ const HomeScreen = ({ navigation }) => {
       
         navigation.setParams({ hidePromo: undefined });
       }
-    }, [fetchUserProfile, fetchServices, fetchSavedAddresses, navigation?.route?.params?.hidePromo])
+    }, [fetchUserProfile, fetchServices, fetchSavedAddresses, detectCurrentLocation, navigation?.route?.params?.hidePromo])
   );
+
+  const selectedAddressPrimary = selectedAddress
+    ? [selectedAddress?.house, selectedAddress?.street].filter(Boolean).join(', ')
+    : detectedLocation || 'Detecting location...';
+  const selectedAddressSecondary = selectedAddress
+    ? [selectedAddress?.city, selectedAddress?.state, selectedAddress?.pincode || selectedAddress?.postal_code]
+        .filter(Boolean)
+        .join(' ')
+    : detectedMetaLine;
+  const headerAddressLine = [selectedAddressPrimary, selectedAddressSecondary].filter(Boolean).join(' ');
+  const selectedAddressLabel = selectedAddress?.label || 'Current Location';
+  
+  const handleSelectAddress = useCallback((address) => {
+    setSelectedAddress(address);
+    setLocationModalVisible(false);
+  }, []);
 
   const fetchSavedAddresses = useCallback(async () => {
       try {
@@ -151,8 +270,11 @@ const HomeScreen = ({ navigation }) => {
     
         if (Array.isArray(addresses)) {
           setSavedAddresses(addresses);
+          const preferred = resolvePreferredAddress(addresses);
+          setSelectedAddress(preferred);
         } else {
           setSavedAddresses([]);
+          setSelectedAddress(null);
         }
       } catch (error) {
         console.error('Error fetching addresses:', error);
@@ -163,6 +285,100 @@ const HomeScreen = ({ navigation }) => {
     }, []);
   
 
+  const renderAddressModal = () => (
+    <Modal
+      transparent
+      visible={locationModalVisible}
+      animationType="slide"
+      onRequestClose={() => setLocationModalVisible(false)}
+    >
+      <View style={styles.addressModalOverlay}>
+        <View style={styles.addressModalContainer}>
+          <View style={styles.addressModalHeader}>
+            <Text style={styles.addressModalTitle}>Choose delivery location</Text>
+            <TouchableOpacity onPress={() => setLocationModalVisible(false)}>
+              <Ionicons name="close" size={22} color={colors.primaryText} />
+            </TouchableOpacity>
+          </View>
+          <ScrollView style={styles.addressList}>
+            <TouchableOpacity
+              style={styles.addressOption}
+              onPress={() => {
+                setSelectedAddress(null);
+                detectCurrentLocation();
+                setLocationModalVisible(false);
+              }}
+            >
+              <View style={styles.addressOptionLeft}>
+                <View style={styles.addressIconBubble}>
+                  <Ionicons name="locate" size={18} color="#fff" />
+                </View>
+                <View>
+                  <Text style={styles.addressOptionLabel}>Use current location</Text>
+                  <Text style={styles.addressOptionSummary} numberOfLines={2}>
+                    {detectedLocation || 'Detecting location...'}
+                  </Text>
+                </View>
+              </View>
+            </TouchableOpacity>
+
+            {loadingAddresses ? (
+              <View style={styles.addressLoadingRow}>
+                <ActivityIndicator color={colors.primary} />
+                <Text style={styles.addressLoadingText}>Loading your addresses...</Text>
+              </View>
+            ) : savedAddresses.length > 0 ? (
+              savedAddresses.map((address, index) => {
+                const identifier =
+                  getAddressIdentifier(address) || address?.createdAt || `address-${index}`;
+                const isActive =
+                  identifier && identifier === getAddressIdentifier(selectedAddress);
+                return (
+                  <TouchableOpacity
+                    key={identifier}
+                    style={[styles.addressOption, isActive && styles.addressOptionActive]}
+                    onPress={() => handleSelectAddress(address)}
+                  >
+                    <View style={styles.addressOptionLeft}>
+                      <View style={styles.addressIconBubble}>
+                        <Ionicons name={getAddressIcon(address?.label)} size={18} color="#fff" />
+                      </View>
+                      <View style={styles.addressOptionContent}>
+                        <Text style={styles.addressOptionLabel}>{address?.label || 'Saved'}</Text>
+                        <Text style={styles.addressOptionSummary} numberOfLines={2}>
+                          {formatAddressLine(address)}
+                        </Text>
+                      </View>
+                    </View>
+                    {isActive ? (
+                      <Ionicons name="checkmark-circle" size={20} color={colors.primary} />
+                    ) : null}
+                  </TouchableOpacity>
+                );
+              })
+            ) : (
+              <View style={styles.noAddressSaved}>
+                <Ionicons name="location-outline" size={32} color={colors.primary} />
+                <Text style={styles.noAddressTitle}>No saved addresses</Text>
+                <Text style={styles.noAddressSubtitle}>Add one to access it quickly.</Text>
+              </View>
+            )}
+          </ScrollView>
+          <TouchableOpacity
+            style={styles.addAddressButton}
+            onPress={() => {
+              setLocationModalVisible(false);
+              navigation.navigate('Profile', { screen: 'Address' });
+            }}
+          >
+            <Ionicons name="add-circle-outline" size={20} color="#fff" />
+            <Text style={styles.addAddressButtonText}>Add new address</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </Modal>
+  );
+
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <View style={styles.header}>
@@ -172,15 +388,36 @@ const HomeScreen = ({ navigation }) => {
             style={styles.avatar} 
           />
         </View>
-        <View style={styles.headerText}>
-          <Text style={styles.userName}>{userData.name}</Text>
-          <Text style={styles.userAddress}>{savedAddresses[0]?.house} {savedAddresses[0]?.city} {savedAddresses[0]?.state} {savedAddresses[0]?.pincode}</Text>
-        </View>
+        <TouchableOpacity
+          style={styles.headerInfo}
+          activeOpacity={0.85}
+          onPress={() => {
+            if (savedAddresses.length === 0) {
+              Alert.alert('No saved addresses', 'Please add an address first.');
+              navigation.navigate('Profile', { screen: 'Address' });
+            } else {
+              setLocationModalVisible(true);
+            }
+          }}
+        >
+          <Text style={styles.headerName} numberOfLines={1}>
+            {userData.name || 'Guest User'}
+          </Text>
+          <View style={styles.headerAddressRow}>
+            {detectingLocation ? (
+              <ActivityIndicator size="small" color={colors.primaryText} style={styles.headerAddressLoader} />
+            ) : (
+              <Text style={styles.headerAddressText} numberOfLines={1}>
+                {headerAddressLine}
+              </Text>
+            )}
+          </View>
+        </TouchableOpacity>
         <View style={styles.bellContainer}>
-          {/* <Image source={images.notificationIcon} style={styles.bellIcon} /> */}
           <View style={styles.notificationDot} />
         </View>
       </View>
+      {locationError ? <Text style={styles.locationErrorText}>{locationError}</Text> : null}
       <ScrollView contentContainerStyle={styles.content}>
 
         {showPromoCard && (
@@ -253,6 +490,7 @@ const HomeScreen = ({ navigation }) => {
       </ScrollView>
       
      
+      {renderAddressModal()}
     </SafeAreaView>
   );
 };
@@ -350,7 +588,7 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 16,
+    gap: 14,
     paddingHorizontal: 20,
   },
   avatarContainer: {
@@ -366,18 +604,6 @@ const styles = StyleSheet.create({
     height: 50,
     borderRadius: 25,
   },
-  headerText: {
-    flex: 1,
-  },
-  userName: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: colors.primaryText,
-  },
-  userAddress: {
-    fontSize: 12,
-    color: colors.primaryText,
-  },
   bellContainer: {
     position: 'relative',
     width: 24,
@@ -388,6 +614,29 @@ const styles = StyleSheet.create({
   bellIcon: {
     width: 45,
     height: 34,
+  },
+  headerInfo: {
+    flex: 1,
+  },
+  headerName: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: colors.primaryText,
+  },
+  headerAddressRow: {
+    marginTop: 4,
+  },
+  headerAddressText: {
+    fontSize: 11,
+    color: colors.primaryText,
+  },
+  headerAddressLoader: {
+    flex: 1,
+  },
+  locationErrorText: {
+    marginTop: 6,
+    color: '#FF6B6B',
+    fontSize: 12,
   },
   promoCard: {
     borderRadius: 20,
@@ -573,6 +822,116 @@ const styles = StyleSheet.create({
   loadingText: {
     fontSize: 16,
     color: colors.primaryText,
+  },
+  addressModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    justifyContent: 'flex-end',
+  },
+  addressModalContainer: {
+    backgroundColor: '#fff',
+    borderTopLeftRadius: 26,
+    borderTopRightRadius: 26,
+    paddingBottom: 24,
+    maxHeight: '80%',
+  },
+  addressModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingVertical: 18,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f4f4f4',
+  },
+  addressModalTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: colors.primaryText,
+  },
+  addressList: {
+    paddingHorizontal: 20,
+  },
+  addressOption: {
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f5f5f5',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  addressOptionLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    gap: 12,
+  },
+  addressIconBubble: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  addressOptionContent: {
+    flex: 1,
+  },
+  addressOptionLabel: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: colors.primaryText,
+    marginBottom: 4,
+  },
+  addressOptionSummary: {
+    fontSize: 13,
+    color: colors.secondaryText,
+  },
+  addressOptionActive: {
+    backgroundColor: 'rgba(240, 131, 131, 0.08)',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    marginVertical: 6,
+  },
+  addressLoadingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 20,
+    gap: 12,
+  },
+  addressLoadingText: {
+    color: colors.secondaryText,
+  },
+  noAddressSaved: {
+    alignItems: 'center',
+    paddingVertical: 30,
+    gap: 8,
+  },
+  noAddressTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: colors.primaryText,
+  },
+  noAddressSubtitle: {
+    fontSize: 13,
+    color: colors.secondaryText,
+    textAlign: 'center',
+  },
+  addAddressButton: {
+    marginTop: 12,
+    marginHorizontal: 20,
+    backgroundColor: colors.primary,
+    borderRadius: 14,
+    paddingVertical: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  addAddressButtonText: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: '600',
   },
 });
 
