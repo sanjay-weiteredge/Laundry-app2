@@ -8,12 +8,13 @@ import {
   ScrollView,
   TouchableOpacity,
   Image,
-  Alert,
+  Alert, TouchableWithoutFeedback, Keyboard,
   Modal,
   ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import colors from '../component/color';
 import images from '../component/image';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -65,6 +66,27 @@ const HomeScreen = ({ navigation }) => {
   const [services, setServices] = useState([]);
   const [loadingServices, setLoadingServices] = useState(false);
   const [showPromoCard, setShowPromoCard] = useState(true);
+  const [selectedServices, setSelectedServices] = useState({});
+
+  const handleQuantityChange = (serviceId, change) => {
+    setSelectedServices(prev => {
+      const currentQty = prev[serviceId]?.quantity || 0;
+      const newQty = Math.max(0, currentQty + change);
+      
+      if (newQty === 0) {
+        const { [serviceId]: _, ...rest } = prev;
+        return rest;
+      }
+      
+      return {
+        ...prev,
+        [serviceId]: {
+          ...prev[serviceId],
+          quantity: newQty
+        }
+      };
+    });
+  };
   const [locationModalVisible, setLocationModalVisible] = useState(false);
   const [selectedAddress, setSelectedAddress] = useState(null);
   const [detectedLocation, setDetectedLocation] = useState('');
@@ -73,7 +95,20 @@ const HomeScreen = ({ navigation }) => {
   const [detectedMetaLine, setDetectedMetaLine] = useState('');
 
   const handleServiceSelect = (service) => {
-    navigation.navigate('SelectTimeSlot', { service, selectedAddress });
+    setSelectedServices(prev => ({
+      ...prev,
+      [service.id]: {
+        ...service,
+        quantity: prev[service.id]?.quantity || 1
+      }
+    }));
+  };
+
+  const handleContinue = () => {
+    const selected = Object.values(selectedServices).filter(s => s.quantity > 0);
+    if (selected.length > 0) {
+      navigation.navigate('SelectTimeSlot', { services: selected, selectedAddress });
+    }
   };
 
   const handleSeeAllPress = () => {
@@ -415,59 +450,107 @@ const HomeScreen = ({ navigation }) => {
             <Text style={styles.loadingText}>No services available</Text>
           </View>
         ) : (
-          services.map((service) => (
-            <ServiceCard
-              key={service.id}
-              title={service.title}
-              description={service.description}
-              imageSource={service.imageSource}
-              onPress={() => handleServiceSelect(service)}
-            />
-          ))
+          services.map((service) => {
+            const isSelected = !!selectedServices[service.id];
+            return (
+              <ServiceCard
+                key={service.id}
+                service={{
+                  ...service,
+                  quantity: selectedServices[service.id]?.quantity || 0
+                }}
+                isSelected={isSelected}
+                onSelect={() => handleServiceSelect(service)}
+                onQuantityChange={handleQuantityChange}
+              />
+            );
+          })
         )}
-   
+    {Object.keys(selectedServices).length > 0 && (
+        <View style={styles.continueButtonContainer}>
+          <TouchableOpacity 
+            style={styles.continueButton}
+            onPress={handleContinue}
+            activeOpacity={0.8}
+          >
+            <LinearGradient
+                            colors={[colors.primaryLight, colors.primary]}
+                            style={styles.buttonGradient}
+                            start={{ x: 1, y: 1 }}
+                            end={{ x: 1, y: 1 }}
+                          >
+            <Text style={styles.continueButtonText}>
+              Continue ({Object.values(selectedServices).reduce((sum, s) => sum + s.quantity, 0)} items)
+            </Text>
+            </LinearGradient>
+          </TouchableOpacity>
+        </View>
+      )}
 
       </ScrollView>
+      
+     
       {renderAddressModal()}
     </SafeAreaView>
   );
 };
 
-const ServiceCard = ({ title, description, imageSource, isSelected, onPress, navigation }) => {
+const ServiceCard = ({ service, isSelected, onQuantityChange, onSelect }) => {
+  const { title, description, imageSource, id, quantity = 0 } = service;
+  const showQuantityControls = isSelected || quantity > 0;
+  
   return (
-    <TouchableOpacity 
-      style={[
-        styles.serviceCard, 
-        isSelected && styles.selectedServiceCard
-      ]} 
-      activeOpacity={0.8}
-      onPress={onPress}
-    >
+    <View style={[
+      styles.serviceCard, 
+      (isSelected || quantity > 0) && styles.selectedServiceCard
+    ]}>
       <View style={styles.serviceInfo}>
-        <Text style={styles.serviceTitle}>{title}</Text>
-        <Text style={styles.serviceDescription}>{description}</Text>
-        <View style={[
-          styles.selectButton,
-          isSelected && styles.selectedButton
-        ]}>
-          <Text style={[
-            styles.selectButtonText,
-            isSelected && styles.selectedButtonText
-          ]}>
-            {isSelected ? 'Selected' : 'Select service'}
-          </Text>
+        <View style={styles.serviceHeader}>
+          <Text style={styles.serviceTitle} numberOfLines={1} ellipsizeMode="tail">{title}</Text>
+          <Text style={styles.quantityBadge}>{quantity}</Text>
+        </View>
+        <Text style={styles.serviceDescription} numberOfLines={2} ellipsizeMode="tail">{description}</Text>
+        
+        <View style={styles.controlsContainer}>
+          {showQuantityControls ? (
+            <View style={styles.quantityContainer}>
+              <TouchableOpacity 
+                style={[styles.quantityButton, quantity === 0 && styles.disabledButton]}
+                onPress={() => onQuantityChange(id, -1)}
+                disabled={quantity === 0}
+              >
+                <Text style={[styles.quantityButtonText, quantity === 0 && styles.disabledButtonText]}>-</Text>
+              </TouchableOpacity>
+              <Text style={styles.quantityText}>{quantity}</Text>
+              <TouchableOpacity 
+                style={styles.quantityButton}
+                onPress={() => onQuantityChange(id, 1)}
+              >
+                <Text style={styles.quantityButtonText}>+</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <TouchableOpacity 
+              style={styles.selectButton}
+              onPress={onSelect}
+            >
+              <Text style={styles.selectButtonText}>Select</Text>
+            </TouchableOpacity>
+          )}
         </View>
       </View>
       <View style={styles.imageContainer}>
-        <Image source={imageSource} style={styles.serviceImage} resizeMode='contain' />
+        <TouchableWithoutFeedback onPress={onSelect}>
+          <Image source={imageSource} style={styles.serviceImage} resizeMode='contain' />
+        </TouchableWithoutFeedback>
       </View>
-    </TouchableOpacity>
+    </View>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
-    height: '100%',
+    height: '95%',
     paddingBottom: 50,
     width: '100%',  
     backgroundColor: colors.mainColor,
@@ -478,6 +561,30 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     gap: 24,
   },
+  continueButtonContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    // width: '90%',
+    paddingHorizontal: 20,
+  },
+  continueButton: {
+      alignSelf: 'stretch',
+      borderRadius: 12,
+      overflow: 'hidden',
+      marginTop: 16,
+      height: 46,
+    },
+    buttonGradient: {
+      flex: 1,
+      justifyContent: 'center',
+      alignItems: 'center',
+      // width: '80%',
+    },
+    continueButtonText: {
+      color: colors.primaryLight,
+      fontSize: 18,
+      fontWeight: '600',
+    },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -568,6 +675,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 18,
     marginBottom: 16,
   },
+  quantityButtonText: {
+    color: colors.primary,
+    fontWeight: '600',
+    fontSize: 20,
+    
+  },
   promoButtonText: {
     color: colors.primary,
     fontWeight: '600',
@@ -602,32 +715,49 @@ const styles = StyleSheet.create({
   serviceCard: {
     flexDirection: 'row',
     backgroundColor: '#fff',
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 16,
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 12,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-    overflow: 'hidden',
-    minHeight: 160,
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 3,
+    elevation: 2,
+    minHeight: 100,
   },
   selectedServiceCard: {
-    borderWidth: 1.5,
+    borderWidth: 1,
     borderColor: colors.primary,
-    backgroundColor: '#f0f7ff',
+    backgroundColor: '#fff9f9',
   },
   serviceInfo: {
     flex: 1,
-    gap: 12,
-    paddingRight: '50%',
-    paddingVertical: 8,
+    marginRight: 10,
+    justifyContent: 'space-between',
+  },
+  serviceHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  quantityBadge: {
+    backgroundColor: colors.primaryLight,
+    color: colors.primary,
+    borderRadius: 10,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    fontSize: 12,
+    fontWeight: '600',
+    minWidth: 20,
+    textAlign: 'center',
   },
   serviceTitle: {
-    fontSize: 18,
+    fontSize: 15,
     fontWeight: '600',
     color: colors.primaryText,
+    flex: 1,
+    marginRight: 8,
   },
   serviceDescription: {
     fontSize: 13,
@@ -635,15 +765,15 @@ const styles = StyleSheet.create({
   },
   selectButton: {
     backgroundColor: colors.primary,
-    paddingVertical: 8,
-    paddingHorizontal: 14,
-    borderRadius: 20,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 6,
     alignSelf: 'flex-start',
   },
   selectButtonText: {
-    color: colors.stocke,
-    fontWeight: '600',
-    fontSize: 11,
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '500',
   },
   imageContainer: {
     position: 'absolute',
@@ -652,8 +782,8 @@ const styles = StyleSheet.create({
     bottom: 0,
     width: '45%',
     overflow: 'hidden',
-    borderTopRightRadius: 16,
-    borderBottomRightRadius: 16,
+    borderTopRightRadius: 12,
+    borderBottomRightRadius: 12,
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: 'rgba(255, 255, 255, 0.05)',
@@ -661,7 +791,29 @@ const styles = StyleSheet.create({
   serviceImage: {
     width: '100%',
     height: '100%',
-    resizeMode: 'cover',
+  },
+  quantityButton: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    backgroundColor: '#fff',
+    borderRadius: 4,
+    minWidth: 28,
+    height: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  disabledButton: {
+    backgroundColor: '#f5f5f5',
+  },
+  disabledButtonText: {
+    color: '#ccc',
+  },
+  quantityText: {
+    fontSize: 18,
+    fontWeight: '600',
+    marginHorizontal: 6,
+    minWidth: 18,
+    textAlign: 'center',
   },
   loadingContainer: {
     padding: 20,
