@@ -24,54 +24,53 @@ const SelectTimeSlot = ({ navigation, route }) => {
   const [showRescheduleSuccessModal, setShowRescheduleSuccessModal] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const modalAnimValue = useRef(new Animated.Value(0)).current;
-  
+
   const { service, services: servicesParam, isReschedule, orderId, onRescheduleComplete } = route.params || {};
   const services = servicesParam || (service ? [service] : []);
-  
-  
+
+
   useEffect(() => {
     navigation.setOptions({
       title: isReschedule ? 'Reschedule Order' : 'Select Time Slot',
       headerTitleAlign: 'center',
     });
   }, [navigation, isReschedule]);
-  
+
   const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
   const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  
-  
+
+
   const showSuccessModalAnimated = useCallback((data) => {
-    console.log('showSuccessModalAnimated called with data:', JSON.stringify(data, null, 2));
-    
-    // Make sure we have the minimum required data
+
+
+
     if (!data) {
       console.error('No data provided to showSuccessModalAnimated');
       setErrorMessage('No booking data received');
       setShowErrorModal(true);
       return;
     }
-    
-    // Ensure we have a valid order ID
+
+
     const bookingDataWithDefaults = {
       ...data,
       orderId: data.orderId || 'N/A',
       store: data.store || { name: 'N/A', distance: 'N/A' },
       pickupSlot: data.pickupSlot || { start: null, end: null }
     };
-    
-    console.log('Setting booking data and showing modal');
-    
-    // Set the booking data first
+
+
+
     setBookingData(bookingDataWithDefaults);
-    
-    // Reset animation value
+
+
     modalAnimValue.setValue(0);
-    
-    // Show the modal in the next tick to ensure state is updated
+
+
     requestAnimationFrame(() => {
       setShowSuccessModal(true);
-      
-      // Animate the modal in
+
+
       Animated.timing(modalAnimValue, {
         toValue: 1,
         duration: 300,
@@ -97,34 +96,34 @@ const SelectTimeSlot = ({ navigation, route }) => {
 
   const fetchTimeSlots = useCallback(async (date, serviceId) => {
     let isMounted = true;
-    
+
     if (!serviceId) {
-      console.log('No service ID provided');
+
       return;
     }
-    
+
     try {
       if (isMounted) {
         setLoadingSlots(true);
         setTimeSlots([]);
       }
-      
+
       const token = await AsyncStorage.getItem('userToken');
       if (!token) {
         throw new Error('Please log in again');
       }
-      
+
       const dateStr = date.toISOString().split('T')[0];
       console.log(`Fetching time slots for service ${serviceId} on ${dateStr}`);
-      
+
       const slots = await getTimeSlots(dateStr, serviceId, token);
-      
+
       if (!isMounted) return;
-      
+
       if (!Array.isArray(slots)) {
         throw new Error('Invalid time slots data received');
       }
-      
+
       const mappedSlots = slots.map((slot, index) => ({
         id: `${dateStr}-${index}-${Date.now()}`,
         time: slot.display || `${slot.start} - ${slot.end}`,
@@ -132,18 +131,18 @@ const SelectTimeSlot = ({ navigation, route }) => {
         end: slot.end,
         available: slot.isAvailable !== false
       }));
-      
+
       if (mappedSlots.length === 0) {
         console.log('No time slots available for the selected date');
       }
-      
+
       setTimeSlots(mappedSlots);
     } catch (error) {
       console.error('Error fetching time slots:', error);
       if (isMounted) {
         setErrorMessage(
-          error.response?.data?.message || 
-          error.message || 
+          error.response?.data?.message ||
+          error.message ||
           'Failed to load time slots. Please try again.'
         );
         setShowErrorModal(true);
@@ -154,13 +153,13 @@ const SelectTimeSlot = ({ navigation, route }) => {
         setLoadingSlots(false);
       }
     }
-    
+
     return () => {
       isMounted = false;
     };
   }, []);
-  
-  // Memoize the service ID to prevent unnecessary re-renders
+
+
   const serviceId = useMemo(() => {
     return services?.[0]?.id;
   }, [services]);
@@ -174,14 +173,14 @@ const SelectTimeSlot = ({ navigation, route }) => {
     }
     setDates(next7Days);
   }, []);
-  
- 
+
+
   // Effect to load time slots when date or service changes
   useEffect(() => {
     let isMounted = true;
-    
+
     if (!serviceId) return;
-    
+
     const loadTimeSlots = async () => {
       try {
         await fetchTimeSlots(selectedDate, serviceId);
@@ -193,16 +192,16 @@ const SelectTimeSlot = ({ navigation, route }) => {
         }
       }
     };
-    
+
     loadTimeSlots();
-    
+
     return () => {
       isMounted = false;
     };
   }, [selectedDate, serviceId, fetchTimeSlots]);
-  
 
-  
+
+
   const handleConfirmBooking = async () => {
     // Validate input
     if (!selectedSlot) {
@@ -210,18 +209,18 @@ const SelectTimeSlot = ({ navigation, route }) => {
       setShowErrorModal(true);
       return;
     }
-    
+
     try {
       setBookingInProgress(true);
-      
+
       const token = await AsyncStorage.getItem('userToken');
       if (!token) {
         throw new Error('Your session has expired. Please log in again.');
       }
-      
+
       if (isReschedule && route.params?.orderId) {
         const { orderId, currentOrder, onRescheduleComplete } = route.params;
-        
+
         try {
           const rescheduleResult = await rescheduleOrder(
             orderId,
@@ -229,9 +228,9 @@ const SelectTimeSlot = ({ navigation, route }) => {
             selectedSlot.end,
             token
           );
-          
+
           console.log('Reschedule API Response:', rescheduleResult);
-          
+
           if (onRescheduleComplete) {
             // Create updated order with new time slot
             const updatedOrder = {
@@ -243,15 +242,15 @@ const SelectTimeSlot = ({ navigation, route }) => {
               },
               updatedAt: new Date().toISOString()
             };
-            
+
             onRescheduleComplete(updatedOrder);
           }
-          
+
           // Navigate back after a short delay
           setTimeout(() => {
             navigation.goBack();
           }, 500);
-          
+
         } catch (error) {
           console.error('Reschedule error:', error);
           throw error;
@@ -263,14 +262,12 @@ const SelectTimeSlot = ({ navigation, route }) => {
           setShowNoAddressModal(true);
           return;
         }
-        
+
         const addressId = addresses[0].id;
 
+        // Prepare booking data according to the new API
         const bookingData = {
-          services: services.map(s => ({
-            id: s.id,
-            quantity: s.quantity || 1
-          })),
+          services: services.map(s => s.id), // Just send array of service IDs
           slotStart: selectedSlot.start,
           slotEnd: selectedSlot.end,
           addressId: addressId,
@@ -278,62 +275,74 @@ const SelectTimeSlot = ({ navigation, route }) => {
         };
 
         console.log('Sending booking request with data:', JSON.stringify(bookingData, null, 2));
-        
+
         try {
           const response = await bookService(bookingData, token);
           console.log('Raw API Response:', JSON.stringify(response, null, 2));
-          
+
           if (!response) {
             throw new Error('No response received from server');
           }
-          
+
           // Handle both response.data and direct response (in case the API returns data directly)
           const responseData = response.data || response;
-          
+
           if (!responseData) {
             throw new Error('No data in response');
           }
-          
+
           console.log('Response data:', JSON.stringify(responseData, null, 2));
-          
+
           // Prepare order data for the success modal
           const orderData = {
             orderId: responseData.id || 'N/A',
             status: responseData.order_status || 'pending',
             pickupSlot: {
               start: responseData.pickup_scheduled_at,
-              end: responseData.pickup_slot_end || responseData.pickupSlot?.end
+              end: responseData.pickup_slot_end
             },
-            store: responseData.store || { 
-              name: responseData.store?.name || 'N/A', 
-              distance: responseData.store?.distance || 'N/A',
+            store: responseData.store || {
+              name: responseData.store?.name || 'N/A',
+              distance: responseData.store?.distance ?
+                `${parseFloat(responseData.store.distance).toFixed(2)} km` : 'N/A',
               ...responseData.store
             },
-            items: responseData.items || []
+            items: responseData.items ? responseData.items.map(item => ({
+              ...item,
+              service: item.service || {}
+            })) : []
           };
-          
+
           console.log('Processed order data for modal:', JSON.stringify(orderData, null, 2));
-          
+
           // Show success modal with a small delay to ensure state updates properly
           setTimeout(() => {
             showSuccessModalAnimated(orderData);
           }, 100);
-          
+
         } catch (error) {
           console.error('Error in booking process:', {
             error: error.message,
             response: error.response?.data,
             stack: error.stack
           });
+
+          // Show more detailed error message to the user
+          const errorMessage = error.response?.data?.message ||
+            error.message ||
+            'Failed to book service. Please try again.';
+
+          setErrorMessage(errorMessage);
+          setShowErrorModal(true);
           throw error;
         }
       }
-      
+
     } catch (error) {
       console.error(isReschedule ? 'Reschedule error:' : 'Booking error:', error);
       setErrorMessage(
-        error.response?.data?.message || 
-        error.message || 
+        error.response?.data?.message ||
+        error.message ||
         `Failed to ${isReschedule ? 'reschedule order' : 'book service'}. Please try again.`
       );
       setShowErrorModal(true);
@@ -341,12 +350,12 @@ const SelectTimeSlot = ({ navigation, route }) => {
       setBookingInProgress(false);
     }
   };
-  
+
   const renderDateItem = (date) => {
     const dayNumber = date.getDate();
     const dayName = days[date.getDay()];
     const isSelected = date.toDateString() === selectedDate.toDateString();
-    
+
     return (
       <TouchableOpacity
         key={date.toString()}
@@ -376,7 +385,7 @@ const SelectTimeSlot = ({ navigation, route }) => {
         </View>
       );
     }
-    
+
     if (timeSlots.length === 0) {
       return (
         <View style={styles.noSlotsContainer}>
@@ -416,7 +425,7 @@ const SelectTimeSlot = ({ navigation, route }) => {
   };
 
   const getServiceIcon = (serviceType) => {
-    switch(serviceType?.toLowerCase()) {
+    switch (serviceType?.toLowerCase()) {
       case 'washing':
         return 'water-outline';
       case 'dry clean':
@@ -432,10 +441,7 @@ const SelectTimeSlot = ({ navigation, route }) => {
 
   const renderServiceDetails = () => {
     if (services.length === 0) return null;
-    
-    const totalItems = services.reduce((sum, s) => sum + (s.quantity || 1), 0);
-    const totalPrice = services.reduce((sum, s) => sum + ((s.price || 0) * (s.quantity || 1)), 0);
-    
+
     return (
       <View style={styles.serviceDetailsContainer}>
         <View style={styles.sectionHeader}>
@@ -444,71 +450,59 @@ const SelectTimeSlot = ({ navigation, route }) => {
           </View>
           <View style={styles.summaryBadge}>
             <Text style={styles.summaryText}>
-              {totalItems === 1 ? 'Total item' : 'Total items'} {totalItems} 
+              {services.length} {services.length === 1 ? 'Service' : 'Services'}
             </Text>
           </View>
         </View>
-        
+
         <View style={styles.servicesList}>
           {services.map((service, index) => (
             <View key={`${service.id || index}`} style={styles.serviceItem}>
               <View style={styles.serviceInfo1}>
-              
                 <Text style={styles.serviceName} numberOfLines={1}>
                   {service.title || 'Laundry Service'}
                 </Text>
-                <View style={styles.quantityBadge}>
-                <Text style={styles.quantityText}>x{service.quantity || 1}</Text>
               </View>
-              </View>
-              
             </View>
           ))}
         </View>
-        
-        {totalPrice > 0 && (
-          <View style={styles.totalContainer}>
-            <Text style={styles.totalText}>Total:</Text>
-            <Text style={styles.totalPrice}>₹{totalPrice}</Text>
-          </View>
-        )}
       </View>
     );
   };
 
   const BookingSuccessModal = () => {
     console.log('BookingSuccessModal rendering, showSuccessModal:', showSuccessModal, 'bookingData:', bookingData);
-    
+
     if (!showSuccessModal || !bookingData) {
       console.log('Modal not showing because:', { showSuccessModal, hasBookingData: !!bookingData });
       return null;
     }
-    
+
     // Extract services from booking data
     const services = bookingData.items || [];
-    
+
     // Helper function to render service items
     const renderServiceItem = (item, index) => {
       if (!item || !item.service) return null;
-      
+
       return (
         <View key={`service-${item.id || index}`} style={styles.serviceItem}>
           <Text style={styles.serviceName}>
             {item.service.name || `Service #${item.id}`}
           </Text>
-          <Text style={styles.serviceQuantity}>x{item.quantity || 1}</Text>
+          {/* <Text style={styles.serviceQuantity}>x{item.quantity || 1}</Text> */}
         </View>
       );
     };
 
-      const formatDateTime = (dateString) => {
+    const formatDateTime = (dateString) => {
       if (!dateString) return 'N/A';
       try {
         const date = new Date(dateString);
         if (isNaN(date.getTime())) return 'Invalid date';
-        return date.toLocaleString('en-IN', { 
-          day: 'numeric', 
-          month: 'short', 
+        return date.toLocaleString('en-IN', {
+          day: 'numeric',
+          month: 'short',
           year: 'numeric',
           hour: '2-digit',
           minute: '2-digit',
@@ -525,25 +519,25 @@ const SelectTimeSlot = ({ navigation, route }) => {
       if (!startDateString || !endDateString) return 'N/A';
       const startDate = new Date(startDateString);
       const endDate = new Date(endDateString);
-      
-      const dateStr = startDate.toLocaleDateString('en-IN', { 
-        day: 'numeric', 
-        month: 'short', 
-        year: 'numeric' 
+
+      const dateStr = startDate.toLocaleDateString('en-IN', {
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric'
       });
-      
-      const startTime = startDate.toLocaleTimeString('en-IN', { 
+
+      const startTime = startDate.toLocaleTimeString('en-IN', {
         hour: '2-digit',
         minute: '2-digit',
-        hour12: true 
+        hour12: true
       });
-      
-      const endTime = endDate.toLocaleTimeString('en-IN', { 
+
+      const endTime = endDate.toLocaleTimeString('en-IN', {
         hour: '2-digit',
         minute: '2-digit',
-        hour12: true 
+        hour12: true
       });
-      
+
       return `${dateStr}, ${startTime} - ${endTime}`;
     };
 
@@ -555,7 +549,7 @@ const SelectTimeSlot = ({ navigation, route }) => {
         onRequestClose={hideSuccessModal}
       >
         <View style={styles.modalOverlay}>
-          <Animated.View 
+          <Animated.View
             style={[
               styles.modalContainer,
               {
@@ -584,7 +578,7 @@ const SelectTimeSlot = ({ navigation, route }) => {
                 <Text style={styles.detailLabel}>Order ID:</Text>
                 <Text style={styles.detailValue}>#{bookingData.orderId}</Text>
               </View>
-              
+
               <View style={styles.detailSection}>
                 <Text style={styles.sectionTitle}>Services</Text>
                 <View style={styles.servicesList}>
@@ -595,30 +589,30 @@ const SelectTimeSlot = ({ navigation, route }) => {
                   )}
                 </View>
               </View>
-              
+
               <View style={styles.detailRow}>
                 <Text style={styles.detailLabel}>Store:</Text>
                 <Text style={styles.detailValue}>{bookingData.store?.name || 'N/A'}</Text>
               </View>
-              
+
               {/* <View style={styles.detailRow}>
                 <Text style={styles.detailLabel}>Distance:</Text>
                 <Text style={styles.detailValue}>{bookingData.store?.distance || 'N/A'}</Text>
               </View> */}
-              
+
               <View style={styles.detailRow}>
                 <Text style={styles.detailLabel}>Pickup Time:</Text>
                 <Text style={styles.detailValue}>
-                  {bookingData.pickupSlot?.start && bookingData.pickupSlot?.end 
+                  {bookingData.pickupSlot?.start && bookingData.pickupSlot?.end
                     ? formatTimeRange(bookingData.pickupSlot.start, bookingData.pickupSlot.end)
                     : 'Time not specified'}
                 </Text>
               </View>
             </View>
 
-    
 
-            <TouchableOpacity 
+
+            <TouchableOpacity
               style={styles.closeButton}
               onPress={() => {
                 hideSuccessModal();
@@ -638,18 +632,18 @@ const SelectTimeSlot = ({ navigation, route }) => {
       <BookingSuccessModal />
       <SafeAreaView style={styles.container}>
         <ScrollView contentContainerStyle={styles.scrollContent}>
-       
 
-       
+
+
 
           {renderServiceDetails()}
-             <View style={{marginTop: 20}}>
+          <View style={{ marginTop: 20 }}>
             {/* <Text style={styles.serviceName}>{services.map(s => s.title || 'Laundry Service').join(', ')}</Text> */}
             <Text style={styles.serviceDescription}>Select a preferred date and time slot</Text>
           </View>
           <Text style={styles.sectionTitle}>Select Date</Text>
-          <ScrollView 
-            horizontal 
+          <ScrollView
+            horizontal
             showsHorizontalScrollIndicator={false}
             style={styles.dateScroll}
             contentContainerStyle={styles.dateScrollContent}
@@ -661,7 +655,7 @@ const SelectTimeSlot = ({ navigation, route }) => {
           {renderTimeSlots()}
 
           <View style={styles.confirmButtonContainer}>
-            <TouchableOpacity 
+            <TouchableOpacity
               style={[
                 styles.confirmButton,
                 (!selectedSlot || bookingInProgress) && styles.disabledButton
@@ -673,7 +667,7 @@ const SelectTimeSlot = ({ navigation, route }) => {
                 <ActivityIndicator size="small" color="#fff" />
               ) : (
                 <Text style={styles.confirmButtonText}>
-                  {isReschedule 
+                  {isReschedule
                     ? `Reschedule on ${selectedDate && days[selectedDate.getDay()] + ', ' + selectedDate.getDate() + ' ' + months[selectedDate.getMonth()]}`
                     : `Book service on ${selectedDate && days[selectedDate.getDay()] + ', ' + selectedDate.getDate() + ' ' + months[selectedDate.getMonth()]}`
                   }
@@ -683,7 +677,7 @@ const SelectTimeSlot = ({ navigation, route }) => {
           </View>
         </ScrollView>
       </SafeAreaView>
-      
+
       {/* Error Modal */}
       <Modal
         transparent
@@ -705,7 +699,7 @@ const SelectTimeSlot = ({ navigation, route }) => {
           </View>
         </View>
       </Modal>
-      
+
       {/* No Address Modal */}
       <Modal
         transparent
@@ -730,22 +724,22 @@ const SelectTimeSlot = ({ navigation, route }) => {
                 onPress={() => {
                   setShowNoAddressModal(false);
                   // Navigate directly to the Address screen
-                  navigation.navigate('Profile', { 
+                  navigation.navigate('Profile', {
                     screen: 'Address',
-                    params: { 
-                      fromDeepLink: true 
+                    params: {
+                      fromDeepLink: true
                     }
                   });
                 }}
               >
                 <Text style={styles.errorModalButtonText}>Add Address</Text>
               </TouchableOpacity>
-              
+
             </View>
           </View>
         </View>
       </Modal>
-      
+
       {/* Reschedule Success Modal */}
       <Modal
         transparent
@@ -861,7 +855,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: colors.primaryText,
     marginBottom: 20,
-    
+
   },
   timeSlotsGrid: {
     flexDirection: 'row',
@@ -1254,8 +1248,8 @@ const styles = StyleSheet.create({
   serviceInfo1: {
     flexDirection: 'row',
     justifyContent: 'center',
-    alignSelf:'flex-start'
-   
+    alignSelf: 'flex-start'
+
   },
   serviceName: {
     fontSize: 16,
@@ -1269,7 +1263,7 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     maxWidth: 50,
     textAlign: 'center',
-    marginLeft:10
+    marginLeft: 10
   },
   quantityText: {
     color: colors.primary,

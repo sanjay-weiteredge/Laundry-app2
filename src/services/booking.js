@@ -3,7 +3,7 @@ import { API } from './apiRequest';
 
 export const getTimeSlots = async (date, serviceId, token) => {
   try {
-    console.log('Fetching time slots for date:', date, 'serviceId:', serviceId);
+    
     
     if (!token) {
       throw new Error('No authentication token provided');
@@ -26,10 +26,7 @@ export const getTimeSlots = async (date, serviceId, token) => {
       throw new Error(response.data?.message || 'Failed to fetch time slots');
     }
   } catch (error) {
-    console.error('Time slots API Error:', error);
-    console.error('Time slots Error Response:', error.response?.data);
-    console.error('Time slots Error Status:', error.response?.status);
-    console.error('Time slots Error Message:', error.message);
+  
     throw error;
   }
 };
@@ -60,9 +57,7 @@ export const bookService = async (bookingData, token) => {
     }
   } catch (error) {
     console.error('Booking API Error:', error);
-    console.error('Booking Error Response:', error.response?.data);
-    console.error('Booking Error Status:', error.response?.status);
-    console.error('Booking Error Message:', error.message);
+
     throw error;
   }
 };

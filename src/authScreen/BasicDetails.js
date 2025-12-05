@@ -69,7 +69,7 @@ const BasicDetails = ({ navigation, route }) => {
   };
 
   const handleSubmit = async () => {
-    console.log('Submit button clicked');
+   
     
     if (!name.trim()) {
       Alert.alert('Error', 'Please enter your name');
@@ -83,11 +83,11 @@ const BasicDetails = ({ navigation, route }) => {
 
     try {
       setIsLoading(true);
-      console.log('Getting token from AsyncStorage...');
+     
       
       // Get the authentication token from AsyncStorage
       const token = await AsyncStorage.getItem('userToken');
-      console.log('Retrieved token:', token ? 'Token exists' : 'No token found');
+     
       
       if (!token) {
         throw new Error('Authentication required. Please login again.');
@@ -106,7 +106,7 @@ const BasicDetails = ({ navigation, route }) => {
         image: image
       }, token);
 
-      console.log('Update profile response received:', response);
+      
 
       if (response && response.success) {
         // Save user data to local storage or context
@@ -122,7 +122,7 @@ const BasicDetails = ({ navigation, route }) => {
         console.log('Saving user data to AsyncStorage:', userData);
         await AsyncStorage.setItem('userData', JSON.stringify(userData));
         
-        console.log('Navigating to Main screen...');
+        
         // Navigate to the main screen on success
         navigation.reset({
           index: 0,

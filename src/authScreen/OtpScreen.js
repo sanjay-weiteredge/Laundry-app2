@@ -58,28 +58,23 @@ const OtpScreen = ({ route, navigation }) => {
 
     try {
       setIsLoading(true);
-      console.log('Verifying OTP...');
+     
       const response = await verifyOTP(phoneNumber, otpCode);
       
       if (response.success) {
-        console.log('OTP verification successful, response:', response);
         
         // Save the token to AsyncStorage
         if (response.token) {
-          console.log('Saving token to AsyncStorage...');
           await AsyncStorage.setItem('userToken', response.token);
-          console.log('Token saved successfully');
 
           // Attempt to fetch profile to determine if user already exists
           try {
-            console.log('Fetching profile to determine user status...');
             const profileResponse = await getProfile(response.token);
             const profileData = profileResponse?.data;
             const hasBasicDetails =
               profileData?.name && profileData?.email;
 
             if (hasBasicDetails) {
-              console.log('Existing user detected, saving profile and navigating to Main.');
               const userData = {
                 id: profileData?.id ?? phoneNumber,
                 name: profileData?.name,
@@ -98,9 +93,8 @@ const OtpScreen = ({ route, navigation }) => {
               return;
             }
 
-            console.log('Profile incomplete, proceeding to BasicDetails.');
           } catch (profileError) {
-            console.warn('Unable to fetch profile after OTP verification:', profileError);
+           
           }
 
           // Navigate to BasicDetails screen with phoneNumber and token for new users
@@ -109,17 +103,14 @@ const OtpScreen = ({ route, navigation }) => {
             token: response.token, // Pass token as a parameter for immediate use
           });
         } else {
-          console.warn('No token received in OTP verification response');
           // Still navigate but show a warning
           Alert.alert('Warning', 'No authentication token received');
           navigation.navigate('BasicDetails', { phoneNumber });
         }
       } else {
-        console.error('OTP verification failed:', response.message);
         Alert.alert('Error', response.message || 'Invalid OTP');
       }
     } catch (error) {
-      console.error('Error verifying OTP:', error);
       Alert.alert('Error', 'Failed to verify OTP. Please try again.');
     } finally {
       setIsLoading(false);

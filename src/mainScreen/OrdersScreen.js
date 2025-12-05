@@ -112,7 +112,7 @@ const OrdersScreen = () => {
           {services.map((service, index) => (
             <View key={`${service.id}-${index}`} style={styles.serviceItem}>
               <Text style={styles.serviceName}>
-                • {service.quantity}x {service.name}
+                • {service.name}
               </Text>
               {service.description && (
                 <Text style={styles.serviceDescription} numberOfLines={1}>

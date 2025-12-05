@@ -22,6 +22,7 @@ import { getProfile } from '../services/userAuth';
 import { fetchAddresses } from '../services/address';
 import { fetchAllServices } from '../services/services';
 import * as Location from 'expo-location';
+import AutoSwiper from '../component/swiper';
 
 const getAddressIdentifier = (address) =>
   address?.id?.toString() ??
@@ -68,23 +69,22 @@ const HomeScreen = ({ navigation }) => {
   const [showPromoCard, setShowPromoCard] = useState(true);
   const [selectedServices, setSelectedServices] = useState({});
 
-  const handleQuantityChange = (serviceId, change) => {
+  const toggleServiceSelection = (service) => {
     setSelectedServices(prev => {
-      const currentQty = prev[serviceId]?.quantity || 0;
-      const newQty = Math.max(0, currentQty + change);
-      
-      if (newQty === 0) {
-        const { [serviceId]: _, ...rest } = prev;
+      if (prev[service.id]) {
+        // Remove service if already selected
+        const { [service.id]: _, ...rest } = prev;
         return rest;
+      } else {
+        // Add service with quantity 1 if not selected
+        return {
+          ...prev,
+          [service.id]: {
+            ...service,
+            quantity: 1
+          }
+        };
       }
-      
-      return {
-        ...prev,
-        [serviceId]: {
-          ...prev[serviceId],
-          quantity: newQty
-        }
-      };
     });
   };
   const [locationModalVisible, setLocationModalVisible] = useState(false);
@@ -95,19 +95,18 @@ const HomeScreen = ({ navigation }) => {
   const [detectedMetaLine, setDetectedMetaLine] = useState('');
 
   const handleServiceSelect = (service) => {
-    setSelectedServices(prev => ({
-      ...prev,
-      [service.id]: {
-        ...service,
-        quantity: prev[service.id]?.quantity || 1
-      }
-    }));
+    toggleServiceSelection(service);
   };
 
   const handleContinue = () => {
-    const selected = Object.values(selectedServices).filter(s => s.quantity > 0);
+    const selected = Object.values(selectedServices);
     if (selected.length > 0) {
-      navigation.navigate('SelectTimeSlot', { services: selected, selectedAddress });
+      navigation.navigate('SelectTimeSlot', { 
+        services: selected, 
+        selectedAddress 
+      });
+    } else {
+      Alert.alert('No Services Selected', 'Please select at least one service to continue.');
     }
   };
 
@@ -188,32 +187,119 @@ const HomeScreen = ({ navigation }) => {
     }
   }, []);
 
+  // Save location to cache
+  const saveLocationToCache = async (coords, address, meta) => {
+    try {
+      const locationData = {
+        coords,
+        address,
+        meta,
+        timestamp: new Date().toISOString()
+      };
+      await AsyncStorage.setItem('@cachedLocation', JSON.stringify(locationData));
+    } catch (error) {
+      console.error('Error saving location to cache:', error);
+    }
+  };
+
+  // Load location from cache
+  const loadCachedLocation = async () => {
+    try {
+      const cachedData = await AsyncStorage.getItem('@cachedLocation');
+      if (cachedData) {
+        const { coords, address, meta } = JSON.parse(cachedData);
+        setDetectedLocation(address);
+        setDetectedMetaLine(meta);
+        return coords;
+      }
+    } catch (error) {
+      console.error('Error loading cached location:', error);
+    }
+    return null;
+  };
+
+  const updateAddressFromCoords = async (coords) => {
+    try {
+      const reverse = await Location.reverseGeocodeAsync(coords);
+      if (reverse.length > 0) {
+        const place = reverse[0];
+        const description = [place.name, place.street].filter(Boolean).join(', ');
+        const meta = [place.city ?? place.subregion, place.region, place.postalCode]
+          .filter(Boolean)
+          .join(' ');
+        
+        // Update state
+        setDetectedLocation(description || 'Current location detected');
+        setDetectedMetaLine(meta);
+        
+        // Save to cache
+        await saveLocationToCache(coords, description, meta);
+      } else {
+        setDetectedLocation('Current location detected');
+        setDetectedMetaLine('');
+      }
+    } catch (error) {
+      console.error('Reverse geocoding error:', error);
+      setLocationError('Unable to get address');
+    }
+  };
+
   const detectCurrentLocation = useCallback(async () => {
     try {
       setDetectingLocation(true);
       setLocationError('');
+
+      // First try to load from cache
+      const cachedCoords = await loadCachedLocation();
+      if (cachedCoords) {
+        // We already updated the UI from loadCachedLocation
+        // Now check if we should update in the background
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status !== 'granted') {
+          setLocationError('Location permission denied');
+          return;
+        }
+        
+        // Get fresh location in the background
+        Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.Low,
+          maximumAge: 1000, // 1 second
+        }).then((freshLocation) => {
+          if (freshLocation) {
+            updateAddressFromCoords(freshLocation.coords);
+          }
+        }).catch(error => {
+          console.error('Error getting fresh location:', error);
+        });
+        return;
+      }
+      
+      // No cache found, proceed with normal flow
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') {
         setLocationError('Location permission denied');
         setDetectedLocation('');
         return;
       }
-      const position = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.Balanced,
-      });
-      const reverse = await Location.reverseGeocodeAsync(position.coords);
-      if (reverse.length > 0) {
-        const place = reverse[0];
-        const description = [place.name, place.street].filter(Boolean).join(', ');
-        setDetectedLocation(description || 'Current location detected');
-        const meta = [place.city ?? place.subregion, place.region, place.postalCode]
-          .filter(Boolean)
-          .join(' ');
-        setDetectedMetaLine(meta);
-      } else {
-        setDetectedLocation('Current location detected');
-        setDetectedMetaLine('');
+
+      // First try to get the last known location (fast)
+      const lastLocation = await Location.getLastKnownPositionAsync();
+      if (lastLocation) {
+        await updateAddressFromCoords(lastLocation.coords);
       }
+
+      // Then get fresh location in the background
+      Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Low,
+        maximumAge: 1000, // 1 second
+      }).then((freshLocation) => {
+        if (freshLocation) {
+          updateAddressFromCoords(freshLocation.coords);
+        }
+      }).catch(error => {
+        console.error('Error getting fresh location:', error);
+      });
+      
     } catch (error) {
       console.error('Location detection error:', error);
       setLocationError('Unable to fetch your location');
@@ -421,17 +507,7 @@ const HomeScreen = ({ navigation }) => {
       <ScrollView contentContainerStyle={styles.content}>
 
         {showPromoCard && (
-          <View style={styles.promoCard}>
-            <View style={styles.promoBadge}>
-              <Text style={styles.promoBadgeText}>Hot Deal</Text>
-            </View>
-            <Text style={styles.promoTitle}>44% OFF</Text>
-            <Text style={styles.promoSubtitle}>On First 1st Service</Text>
-            <TouchableOpacity style={styles.promoButton} activeOpacity={0.8}>
-              <Text style={styles.promoButtonText}>Get Discount</Text>
-            </TouchableOpacity>
-            <Image source={images.cardImage} style={styles.promoImage}  />
-          </View>
+          <AutoSwiper/>
         )}
 
         <View style={styles.sectionHeader}>
@@ -455,13 +531,9 @@ const HomeScreen = ({ navigation }) => {
             return (
               <ServiceCard
                 key={service.id}
-                service={{
-                  ...service,
-                  quantity: selectedServices[service.id]?.quantity || 0
-                }}
+                service={service}
                 isSelected={isSelected}
                 onSelect={() => handleServiceSelect(service)}
-                onQuantityChange={handleQuantityChange}
               />
             );
           })
@@ -474,14 +546,14 @@ const HomeScreen = ({ navigation }) => {
             activeOpacity={0.8}
           >
             <LinearGradient
-                            colors={[colors.primaryLight, colors.primary]}
-                            style={styles.buttonGradient}
-                            start={{ x: 1, y: 1 }}
-                            end={{ x: 1, y: 1 }}
-                          >
-            <Text style={styles.continueButtonText}>
-              Continue ({Object.values(selectedServices).reduce((sum, s) => sum + s.quantity, 0)} items)
-            </Text>
+              colors={[colors.primaryLight, colors.primary]}
+              style={styles.buttonGradient}
+              start={{ x: 1, y: 1 }}
+              end={{ x: 1, y: 1 }}
+            >
+              <Text style={styles.continueButtonText}>
+                Continue ({Object.keys(selectedServices).length} {Object.keys(selectedServices).length === 1 ? 'item' : 'items'})
+              </Text>
             </LinearGradient>
           </TouchableOpacity>
         </View>
@@ -495,56 +567,43 @@ const HomeScreen = ({ navigation }) => {
   );
 };
 
-const ServiceCard = ({ service, isSelected, onQuantityChange, onSelect }) => {
-  const { title, description, imageSource, id, quantity = 0 } = service;
-  const showQuantityControls = isSelected || quantity > 0;
+const ServiceCard = ({ service, isSelected, onSelect }) => {
+  const { title, description, imageSource } = service;
   
   return (
-    <View style={[
-      styles.serviceCard, 
-      (isSelected || quantity > 0) && styles.selectedServiceCard
-    ]}>
+    <TouchableOpacity 
+      style={[
+        styles.serviceCard, 
+        isSelected && styles.selectedServiceCard
+      ]}
+      onPress={onSelect}
+      activeOpacity={0.9}
+    >
       <View style={styles.serviceInfo}>
-        <View style={styles.serviceHeader}>
-          <Text style={styles.serviceTitle} numberOfLines={1} ellipsizeMode="tail">{title}</Text>
-          <Text style={styles.quantityBadge}>{quantity}</Text>
-        </View>
-        <Text style={styles.serviceDescription} numberOfLines={2} ellipsizeMode="tail">{description}</Text>
-        
-        <View style={styles.controlsContainer}>
-          {showQuantityControls ? (
-            <View style={styles.quantityContainer}>
-              <TouchableOpacity 
-                style={[styles.quantityButton, quantity === 0 && styles.disabledButton]}
-                onPress={() => onQuantityChange(id, -1)}
-                disabled={quantity === 0}
-              >
-                <Text style={[styles.quantityButtonText, quantity === 0 && styles.disabledButtonText]}>-</Text>
-              </TouchableOpacity>
-              <Text style={styles.quantityText}>{quantity}</Text>
-              <TouchableOpacity 
-                style={styles.quantityButton}
-                onPress={() => onQuantityChange(id, 1)}
-              >
-                <Text style={styles.quantityButtonText}>+</Text>
-              </TouchableOpacity>
-            </View>
-          ) : (
-            <TouchableOpacity 
-              style={styles.selectButton}
-              onPress={onSelect}
-            >
-              <Text style={styles.selectButtonText}>Select</Text>
-            </TouchableOpacity>
-          )}
-        </View>
+        <Text style={styles.serviceTitle} numberOfLines={1} ellipsizeMode="tail">
+          {title}
+        </Text>
+        <Text style={styles.serviceDescription} numberOfLines={2} ellipsizeMode="tail">
+          {description}
+        </Text>
       </View>
       <View style={styles.imageContainer}>
-        <TouchableWithoutFeedback onPress={onSelect}>
-          <Image source={imageSource} style={styles.serviceImage} resizeMode='contain' />
-        </TouchableWithoutFeedback>
+        <View style={[
+          styles.checkbox, 
+          isSelected && styles.checkboxSelected,
+          styles.checkboxOverlay
+        ]}>
+          {isSelected && (
+            <Ionicons name="checkmark" size={16} color="white" />
+          )}
+        </View>
+        <Image 
+          source={imageSource} 
+          style={styles.serviceImage} 
+          resizeMode='contain' 
+        />
       </View>
-    </View>
+    </TouchableOpacity>
   );
 };
 
@@ -675,12 +734,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 18,
     marginBottom: 16,
   },
-  quantityButtonText: {
-    color: colors.primary,
-    fontWeight: '600',
-    fontSize: 20,
-    
-  },
   promoButtonText: {
     color: colors.primary,
     fontWeight: '600',
@@ -714,16 +767,18 @@ const styles = StyleSheet.create({
   },
   serviceCard: {
     flexDirection: 'row',
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 12,
+    justifyContent: 'space-between',
+    backgroundColor: colors.stocke,
+    borderRadius: 16,
+    padding: 16,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 3,
-    elevation: 2,
-    minHeight: 100,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: 'transparent',
   },
   selectedServiceCard: {
     borderWidth: 1,
@@ -739,18 +794,28 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 4,
+    marginBottom: 8,
   },
-  quantityBadge: {
-    backgroundColor: colors.primaryLight,
-    color: colors.primary,
-    borderRadius: 10,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    fontSize: 12,
-    fontWeight: '600',
-    minWidth: 20,
-    textAlign: 'center',
+  checkbox: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: 'rgba(255, 255, 255, 0.7)',
+    backgroundColor: 'rgba(255, 255, 255, 0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 2,
+  },
+  checkboxOverlay: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    borderColor: 'rgba(255, 255, 255, 0.9)',
+  },
+  checkboxSelected: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
   },
   serviceTitle: {
     fontSize: 15,
@@ -763,18 +828,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: colors.secondaryText,
   },
-  selectButton: {
-    backgroundColor: colors.primary,
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderRadius: 6,
-    alignSelf: 'flex-start',
-  },
-  selectButtonText: {
-    color: '#fff',
-    fontSize: 13,
-    fontWeight: '500',
-  },
   imageContainer: {
     position: 'absolute',
     right: 0,
@@ -786,34 +839,12 @@ const styles = StyleSheet.create({
     borderBottomRightRadius: 12,
     justifyContent: 'center',
     alignItems: 'center',
+    alignItems: 'center',
     backgroundColor: 'rgba(255, 255, 255, 0.05)',
   },
   serviceImage: {
     width: '100%',
     height: '100%',
-  },
-  quantityButton: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    backgroundColor: '#fff',
-    borderRadius: 4,
-    minWidth: 28,
-    height: 28,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  disabledButton: {
-    backgroundColor: '#f5f5f5',
-  },
-  disabledButtonText: {
-    color: '#ccc',
-  },
-  quantityText: {
-    fontSize: 18,
-    fontWeight: '600',
-    marginHorizontal: 6,
-    minWidth: 18,
-    textAlign: 'center',
   },
   loadingContainer: {
     padding: 20,

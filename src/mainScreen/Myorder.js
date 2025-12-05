@@ -49,7 +49,7 @@ const Myorder = ({ navigation }) => {
       
 
       const ordersData = await getUserOrders(token);
-      console.log('Orders data:', ordersData[0].services);
+     
 
       
       // Ensure we always set an array, handle different response formats
@@ -241,7 +241,7 @@ const Myorder = ({ navigation }) => {
         {services.map((service, index) => (
           <View key={`${service.id}-${index}`} style={styles.serviceItem}>
             <Text style={styles.serviceName}>
-              {service.name} x{service.quantity}
+              {service.name} 
             </Text>
             <Text style={styles.serviceDescription} numberOfLines={1}>
               {service.description}
