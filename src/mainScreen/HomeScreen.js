@@ -20,7 +20,7 @@ import images from '../component/image';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getProfile } from '../services/userAuth';
 import { fetchAddresses } from '../services/address';
-import { fetchAllServices } from '../services/services';
+import { fetchUserServices } from '../services/services';
 import * as Location from 'expo-location';
 import AutoSwiper from '../component/swiper';
 
@@ -164,7 +164,7 @@ const HomeScreen = ({ navigation }) => {
         throw new Error('Please log in again');
       }
       
-      const servicesData = await fetchAllServices(token);
+      const servicesData = await fetchUserServices(token);
 
       
     
