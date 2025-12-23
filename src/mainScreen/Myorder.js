@@ -12,7 +12,8 @@ import {
   Modal,
   Animated,
   Dimensions,
-  ScrollView
+  ScrollView,
+  RefreshControl
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -30,6 +31,7 @@ const Myorder = ({ navigation }) => {
   const [showActionModal, setShowActionModal] = useState(false);
   const [actionType, setActionType] = useState(null); // 'cancel' or 'reschedule'
   const [showCancelSuccessModal, setShowCancelSuccessModal] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const modalAnimValue = React.useRef(new Animated.Value(0)).current;
   const cancelSuccessAnimValue = React.useRef(new Animated.Value(0)).current;
 
@@ -39,40 +41,70 @@ const Myorder = ({ navigation }) => {
     }, [])
   );
 
-  const fetchOrders = async () => {
+  const fetchOrders = async (isRefreshing = false) => {
+    const startTime = Date.now();
+    const MIN_LOADING_TIME = 1000; // Minimum loading time in milliseconds (1 second)
+    
     try {
-      setLoading(true);
+      if (!isRefreshing) {
+        setLoading(true);
+      }
+      
+      // Use Promise.race to add a timeout to the API call
       const token = await AsyncStorage.getItem('userToken');
       if (!token) {
         throw new Error('Please log in to view orders');
       }
-      
 
-      const ordersData = await getUserOrders(token);
-     
+      // Create a timeout promise to ensure we don't wait too long
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Request timeout')), 5000) // 5 second timeout
+      );
 
-      
-      // Ensure we always set an array, handle different response formats
+      // Fetch orders with timeout
+      const ordersData = await Promise.race([
+        getUserOrders(token),
+        timeoutPromise
+      ]);
+
+      // Process the data
       let processedOrders = [];
       if (Array.isArray(ordersData)) {
         processedOrders = ordersData;
-      } else if (ordersData && ordersData.data && Array.isArray(ordersData.data)) {
+      } else if (ordersData?.data && Array.isArray(ordersData.data)) {
         processedOrders = ordersData.data;
       } else if (ordersData && typeof ordersData === 'object') {
-        // If it's an object, try to extract array from it
         const possibleArrays = Object.values(ordersData).filter(Array.isArray);
         if (possibleArrays.length > 0) {
           processedOrders = possibleArrays[0];
         }
       }
-      
 
+      // Calculate remaining time to show loading if needed
+      const elapsed = Date.now() - startTime;
+      const remainingTime = Math.max(0, MIN_LOADING_TIME - elapsed);
+      
+      if (remainingTime > 0) {
+        await new Promise(resolve => setTimeout(resolve, remainingTime));
+      }
+      
       setOrders(processedOrders);
     } catch (err) {
       console.error('Fetch orders error:', err);
-      setError(err.message);
+      if (err.message !== 'Request timeout') {
+        setError(err.message);
+      } else {
+        // If timeout, try to use cached data if available
+        if (orders.length > 0) {
+          setError('Connection slow. Showing cached data.');
+          // The orders will remain as they were
+        } else {
+          setError('Connection timeout. Please check your internet and try again.');
+        }
+      }
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   };
 
@@ -252,64 +284,76 @@ const Myorder = ({ navigation }) => {
     );
   };
 
-  const OrderItem = ({ order }) => (
-    <View style={styles.orderCard}>
-      <View style={styles.orderHeader}>
-        <View>
-          <Text style={styles.orderNumber}>Order #{order.orderId}</Text>
-          <Text style={styles.orderDate}>{formatDate(order.createdAt)}</Text>
-        </View>
-        <View style={[styles.statusBadge, { backgroundColor: getStatusColor(order.status) }]} >
-          <Text style={styles.statusText}>{order.status?.charAt(0)?.toUpperCase() + order.status?.slice(1)}</Text>
-        </View>
-      </View>
-      
-      <View style={styles.orderContent}>
-        <View style={styles.serviceInfo}>
-          {renderServices(order.services)}
-          <Text style={styles.storeName}>{order.storeName}</Text>
+  const OrderItem = ({ order }) => {
+    
+    const totalPrice = order.services?.reduce((sum, service) => {
+      return sum + (service.lineTotal || 0);
+    }, 0) || 0;
+    
+  
+    
+    return (
+      <View style={styles.orderCard}>
+        <View style={styles.orderHeader}>
+          <View>
+            <Text style={styles.orderNumber}>Order #{order.orderId}</Text>
+            <Text style={styles.orderDate}>{formatDate(order.createdAt)}</Text>
+          </View>
+          <View style={[styles.statusBadge, { backgroundColor: getStatusColor(order.status) }]} >
+            <Text style={styles.statusText}>{order.status?.charAt(0)?.toUpperCase() + order.status?.slice(1)}</Text>
+          </View>
         </View>
         
-        {order.pickupSlot && (
-          <View style={styles.scheduleInfo}>
-            <Ionicons name="time-outline" size={14} color={colors.primaryText} />
-            <Text style={styles.scheduleText}>
-              Pickup: {formatTimeRange(order.pickupSlot.start, order.pickupSlot.end)}
-            </Text>
+        <View style={styles.orderContent}>
+          <View style={styles.serviceInfo}>
+            {renderServices(order.services)}
+            <Text style={styles.storeName}>{order.storeName}</Text>
           </View>
-        )}
-      </View>
-      
-    
-      {order.status?.toLowerCase() === 'delivered' ? (
-        <View style={styles.completedContainer}>
-          <View style={styles.completedBadge}>
-            <Ionicons name="checkmark-circle" size={20} color="#4CAF50" />
-            <Text style={styles.completedText}>Order Completed</Text>
-          </View>
-          <Text style={styles.deliveredText}>Delivered</Text>
-        </View>
-      ) : order.status?.toLowerCase() !== 'cancelled' && order.status?.toLowerCase() !== 'completed' ? (
-        <View style={styles.actionButtons}>
-          <TouchableOpacity
-            style={[styles.actionButton, styles.cancelButton]}
-            onPress={() => showActionModalAnimated(order, 'cancel')}
-          >
-            <Ionicons name="close-circle-outline" size={16} color="#F44336" />
-            <Text style={styles.cancelButtonText}>Cancel</Text>
-          </TouchableOpacity>
           
-          <TouchableOpacity
-            style={[styles.actionButton, styles.rescheduleButton]}
-            onPress={() => showActionModalAnimated(order, 'reschedule')}
-          >
-            <Ionicons name="calendar-outline" size={16} color="#2196F3" />
-            <Text style={styles.rescheduleButtonText}>Reschedule</Text>
-          </TouchableOpacity>
+          {order.pickupSlot && (
+            <View style={styles.scheduleInfo}>
+              <Ionicons name="time-outline" size={14} color={colors.primaryText} />
+              <Text style={styles.scheduleText}>
+                Pickup: {formatTimeRange(order.pickupSlot.start, order.pickupSlot.end)}
+              </Text>
+            </View>
+          )}
+          
+          <View style={styles.priceContainer}>
+            <Text style={styles.priceText}>Total: ₹{totalPrice.toFixed(2)}</Text>
+          </View>
+          
+          {order.status?.toLowerCase() === 'delivered' ? (
+            <View style={styles.completedContainer}>
+              <View style={styles.completedBadge}>
+                <Ionicons name="checkmark-circle" size={20} color="#4CAF50" />
+                <Text style={styles.completedText}>Order Completed</Text>
+              </View>
+              <Text style={styles.deliveredText}>Delivered</Text>
+            </View>
+          ) : order.status?.toLowerCase() !== 'cancelled' && order.status?.toLowerCase() !== 'completed' ? (
+            <View style={styles.actionButtons}>
+              <TouchableOpacity
+                style={[styles.actionButton, styles.cancelButton]}
+                onPress={() => showActionModalAnimated(order, 'cancel')}
+              >
+                <Ionicons name="close-circle-outline" size={16} color="#F44336" />
+                <Text style={styles.cancelButtonText}>Cancel</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity
+                style={[styles.actionButton, styles.rescheduleButton]}
+                onPress={() => showActionModalAnimated(order, 'reschedule')}
+              >
+                <Ionicons name="calendar-outline" size={16} color="#2196F3" />
+                <Text style={styles.rescheduleButtonText}>Reschedule</Text>
+              </TouchableOpacity>
+            </View>
+          ) : null}
         </View>
-      ) : null}
-    </View>
-  );
+      </View>
+    );
+  };
 
   const CancelSuccessModal = () => {
     return (
@@ -508,7 +552,23 @@ const Myorder = ({ navigation }) => {
             renderItem={({ item }) => <OrderItem order={item} />}
             keyExtractor={(item) => item.orderId?.toString()}
             contentContainerStyle={styles.ordersList}
-            showsVerticalScrollIndicator={false}
+            initialNumToRender={5}
+            maxToRenderPerBatch={5}
+            updateCellsBatchingPeriod={50}
+            windowSize={5}
+            removeClippedSubviews={true}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={() => {
+                  setRefreshing(true);
+                  fetchOrders(true);
+                }}
+                colors={[colors.primary]}
+                tintColor={colors.primary}
+                progressViewOffset={50}
+              />
+            }
           />
         )}
       </SafeAreaView>
