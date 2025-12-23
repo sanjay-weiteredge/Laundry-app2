@@ -31,6 +31,21 @@ const OrdersScreen = () => {
     }
   };
 
+  // Compute total amount for an order using robust fallbacks
+  const getOrderTotal = (order) => {
+    if (!order) return 0;
+    const direct = order.totalAmount || order.total || order.total_price || order.amount;
+    if (typeof direct === 'number') return direct;
+    // Fallback: sum line totals from services array if present
+    if (Array.isArray(order.services)) {
+      return order.services.reduce((sum, s) => {
+        const lt = s?.lineTotal || s?.line_total || (s?.price && s?.quantity ? s.price * s.quantity : 0);
+        return sum + (typeof lt === 'number' ? lt : 0);
+      }, 0);
+    }
+    return 0;
+  };
+
   useFocusEffect(
     useCallback(() => {
       fetchOrders();
@@ -153,6 +168,12 @@ const OrdersScreen = () => {
               </Text>
             </View>
           )}
+
+          {/* Total Amount */}
+          <View style={styles.totalRow}>
+            <Text style={styles.totalLabel}>Total</Text>
+            <Text style={styles.totalValue}>₹{getOrderTotal(order).toFixed(2)}</Text>
+          </View>
         </View>
       </View>
     );

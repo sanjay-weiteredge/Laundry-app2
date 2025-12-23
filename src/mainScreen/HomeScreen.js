@@ -12,10 +12,11 @@ import {
   Modal,
   ActivityIndicator,
   Linking,
+  FlatList,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
+// removed gradient in favor of solid primary button per design
 import colors from '../component/color';
 import images from '../component/image';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -42,6 +43,31 @@ const formatAddressLine = (address) => {
     .filter(Boolean)
     .join(', ');
   return primary || secondary || address?.address_line || address?.addressLine || 'Unnamed location';
+};
+
+// Grid card version to match the provided design
+const ServiceGridCard = ({ service, isSelected, onSelect }) => {
+  const { title, description, imageSource } = service;
+  return (
+    <TouchableOpacity
+      style={[styles.gridCard, isSelected && styles.gridCardSelected]}
+      onPress={onSelect}
+      activeOpacity={0.9}
+    >
+      {isSelected && (
+        <TouchableOpacity style={styles.selectBadge} onPress={onSelect} activeOpacity={0.8}>
+          <View style={styles.gridTickCircle}>
+            <Ionicons name="checkmark" size={10} color="#fff" />
+          </View>
+        </TouchableOpacity>
+      )}
+      <View style={styles.gridIconWrap}>
+        <Image source={imageSource} style={styles.gridIcon} resizeMode="contain" />
+      </View>
+      <Text style={styles.gridTitle} numberOfLines={1}>{title}</Text>
+      <Text style={styles.gridSubtitle} numberOfLines={1}>{description}</Text>
+    </TouchableOpacity>
+  );
 };
 
 const getAddressIcon = (label = 'Home') => {
@@ -347,6 +373,11 @@ const HomeScreen = ({ navigation }) => {
   
   const handleSelectAddress = useCallback((address) => {
     setSelectedAddress(address);
+    try {
+      AsyncStorage.setItem('@selectedAddress', JSON.stringify(address));
+    } catch (e) {
+      console.warn('Failed to persist selected address');
+    }
     setLocationModalVisible(false);
   }, []);
 
@@ -468,7 +499,7 @@ const HomeScreen = ({ navigation }) => {
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      <View style={styles.header}>
+      {/* <View style={styles.header}>
         <View style={styles.avatarContainer}>
           <Image 
             source={userData.image ? { uri: userData.image } : images.profileImage} 
@@ -488,7 +519,7 @@ const HomeScreen = ({ navigation }) => {
           }}
         >
           <Text style={styles.headerName} numberOfLines={1}>
-            {userData.name || 'Guest User'}
+            {userData.name || 'User'}
           </Text>
           <View style={styles.headerAddressRow}>
             {detectingLocation ? (
@@ -528,66 +559,61 @@ const HomeScreen = ({ navigation }) => {
             <Ionicons name="notifications-outline" size={22} color={colors.primary} />
           </TouchableOpacity>
         </View>
-      </View>
+      </View> */}
       {locationError ? <Text style={styles.locationErrorText}>{locationError}</Text> : null}
-      <ScrollView contentContainerStyle={styles.content}>
-
-        {showPromoCard && (
-          <AutoSwiper/>
+      <FlatList
+        data={services}
+        keyExtractor={(item) => String(item.id)}
+        renderItem={({ item }) => (
+          <ServiceGridCard
+            service={item}
+            isSelected={!!selectedServices[item.id]}
+            onSelect={() => handleServiceSelect(item)}
+          />
         )}
-
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Services</Text>
-          <TouchableOpacity activeOpacity={0.7} onPress={handleSeeAllPress}>
-            <Text style={styles.sectionAction}>{showPromoCard ? 'Hide Promo' : 'Show Promo'}</Text>
-          </TouchableOpacity>
-        </View>
-        
-        {loadingServices ? (
-          <View style={styles.loadingContainer}>
-            <Text style={styles.loadingText}>Loading services...</Text>
+        numColumns={2}
+        columnWrapperStyle={styles.gridRow}
+        contentContainerStyle={styles.gridContainerFlat}
+        ListHeaderComponent={(
+          <View style={styles.listHeaderWrap}>
+            {showPromoCard && (
+              <View style={styles.fullBleed}>
+                <AutoSwiper />
+              </View>
+            )}
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>Select Services</Text>
+              <TouchableOpacity activeOpacity={0.7} onPress={handleSeeAllPress}>
+                <Text style={styles.sectionAction}>{showPromoCard ? 'Hide Promo' : 'Show Promo'}</Text>
+              </TouchableOpacity>
+            </View>
           </View>
-        ) : services.length === 0 ? (
-          <View style={styles.loadingContainer}>
-            <Text style={styles.loadingText}>No services available</Text>
-          </View>
-        ) : (
-          services.map((service) => {
-            const isSelected = !!selectedServices[service.id];
-            return (
-              <ServiceCard
-                key={service.id}
-                service={service}
-                isSelected={isSelected}
-                onSelect={() => handleServiceSelect(service)}
-              />
-            );
-          })
         )}
-    {Object.keys(selectedServices).length > 0 && (
-        <View style={styles.continueButtonContainer}>
-          <TouchableOpacity 
-            style={styles.continueButton}
-            onPress={handleContinue}
-            activeOpacity={0.8}
-          >
-            <LinearGradient
-              colors={[colors.primaryLight, colors.primary]}
-              style={styles.buttonGradient}
-              start={{ x: 1, y: 1 }}
-              end={{ x: 1, y: 1 }}
-            >
-              <Text style={styles.continueButtonText}>
-                Continue ({Object.keys(selectedServices).length} {Object.keys(selectedServices).length === 1 ? 'item' : 'items'})
-              </Text>
-            </LinearGradient>
-          </TouchableOpacity>
-        </View>
-      )}
+        ListEmptyComponent={(
+          <View style={styles.loadingContainer}>
+            <Text style={styles.loadingText}>
+              {loadingServices ? 'Loading services...' : 'No services available'}
+            </Text>
+          </View>
+        )}
+        ListFooterComponent={(
+          Object.keys(selectedServices).length > 0 ? (
+            <View style={styles.continueButtonContainer}>
+              <TouchableOpacity 
+                style={styles.continueButton}
+                onPress={handleContinue}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.continueButtonText}>
+                  {`continue with ${Object.keys(selectedServices).length} ${Object.keys(selectedServices).length === 1 ? 'service' : 'services'}`}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          ) : null
+        )}
+        showsVerticalScrollIndicator={false}
+      />
 
-      </ScrollView>
-      
-     
       {renderAddressModal()}
     </SafeAreaView>
   );
@@ -646,6 +672,101 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     gap: 24,
   },
+  gridContainer: {
+    paddingBottom: 8,
+  },
+  gridContainerFlat: {
+    paddingHorizontal: 20,
+    paddingBottom: 24,
+  },
+  listHeaderWrap: {
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    paddingBottom: 12,
+    gap: 16,
+  },
+  fullBleed: {
+    marginHorizontal: -20,
+  },
+  gridRow: {
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  gridCard: {
+    flex: 1,
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: '#f0f0f0',
+    marginRight: 12,
+    gap: 8,
+  },
+  gridCardSelected: {
+    borderColor: colors.primary,
+    backgroundColor: '#fff8f5',
+  },
+  selectBadge: {
+    position: 'absolute',
+    top: 10,
+    right: 10,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 2,
+  },
+  gridTickHollow: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    borderWidth: 2,
+    borderColor: colors.primary,
+    backgroundColor: 'transparent',
+  },
+  gridIconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: 10,
+    backgroundColor: 'rgba(240,131,131,0.12)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 6,
+  },
+  gridIcon: {
+    width: 28,
+    height: 28,
+  },
+  gridTick: {
+    position: 'absolute',
+    right: -6,
+    top: -6,
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    backgroundColor: colors.primary,
+  },
+  gridTickCircle: {
+    position: 'absolute',
+    right: -6,
+    top: -6,
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  gridTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: colors.primaryText,
+  },
+  gridSubtitle: {
+    fontSize: 12,
+    color: colors.secondaryText,
+  },
   continueButtonContainer: {
     alignItems: 'center',
     justifyContent: 'center',
@@ -658,15 +779,12 @@ const styles = StyleSheet.create({
       overflow: 'hidden',
       marginTop: 16,
       height: 46,
-    },
-    buttonGradient: {
-      flex: 1,
-      justifyContent: 'center',
+      backgroundColor: colors.primary,
       alignItems: 'center',
-      // width: '80%',
+      justifyContent: 'center',
     },
     continueButtonText: {
-      color: colors.primaryLight,
+      color: '#fff',
       fontSize: 18,
       fontWeight: '600',
     },

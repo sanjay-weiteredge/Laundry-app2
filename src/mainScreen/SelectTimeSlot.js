@@ -397,31 +397,70 @@ const SelectTimeSlot = ({ navigation, route }) => {
         </View>
       );
     }
+      // Disable past slots when selected date is today
+    const now = new Date();
+    const isToday = selectedDate.toDateString() === now.toDateString();
+    const isPastForToday = (slot) => {
+      try {
+        const start = new Date(slot.start);
+        return isToday && start < now;
+      } catch {
+        return false;
+      }
+    };
+
+    // Group into Morning / Afternoon / Evening
+    const groups = { MORNING: [], AFTERNOON: [], EVENING: [] };
+    const getPeriod = (h) => {
+      if (h >= 6 && h < 12) return 'MORNING';
+      if (h >= 12 && h < 17) return 'AFTERNOON';
+      return 'EVENING';
+    };
+
+    timeSlots.forEach((slot) => {
+      const d = new Date(slot.start);
+      const period = getPeriod(d.getHours());
+      groups[period].push(slot);
+    });
+
+    const renderGroup = (label) => {
+      const slots = groups[label] || [];
+      if (slots.length === 0) return null;
+      return (
+        <View key={label} style={styles.groupSection}>
+          <Text style={styles.groupLabel}>{label}</Text>
+          <View style={styles.timeSlotsGrid}>
+            {slots.map((slot) => {
+              const disabled = !slot.available || isPastForToday(slot);
+              const selected = selectedSlot?.id === slot.id && !disabled;
+              return (
+                <TouchableOpacity
+                  key={slot.id}
+                  style={[
+                    styles.timeSlot,
+                    selected && styles.selectedTimeSlot,
+                    disabled && styles.unavailableSlot,
+                  ]}
+                  onPress={() => !disabled && setSelectedSlot(slot)}
+                  disabled={disabled}
+                >
+                  <Text style={[styles.timeSlotText, selected && styles.selectedTimeSlotText]}>
+                    {slot.time}
+                  </Text>
+                  {disabled && <View style={styles.overlay} />}
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </View>
+      );
+    };
 
     return (
-      <View style={styles.timeSlotsGrid}>
-        {timeSlots.map((slot) => (
-          <TouchableOpacity
-            key={slot.id}
-            style={[
-              styles.timeSlot,
-              selectedSlot?.id === slot.id && styles.selectedTimeSlot,
-              !slot.available && styles.unavailableSlot,
-            ]}
-            onPress={() => setSelectedSlot(slot)}
-            disabled={!slot.available}
-          >
-            <Text
-              style={[
-                styles.timeSlotText,
-                selectedSlot?.id === slot.id && styles.selectedTimeSlotText,
-              ]}
-            >
-              {slot.time}
-            </Text>
-            {!slot.available && <View style={styles.overlay} />}
-          </TouchableOpacity>
-        ))}
+      <View>
+        {renderGroup('MORNING')}
+        {renderGroup('AFTERNOON')}
+        {renderGroup('EVENING')}
       </View>
     );
   };
@@ -447,18 +486,18 @@ const SelectTimeSlot = ({ navigation, route }) => {
     return (
       <View style={styles.serviceDetailsContainer}>
         <View style={styles.sectionHeader}>
-          <View style={styles.sectionTitleContainer}>
+          {/* <View style={styles.sectionTitleContainer}>
             <Text style={styles.sectionTitle}>Selected Services</Text>
-          </View>
-          <View style={styles.summaryBadge}>
+          </View> */}
+          {/* <View style={styles.summaryBadge}>
             <Text style={styles.summaryText}>
               {services.length} {services.length === 1 ? 'Service' : 'Services'}
             </Text>
-          </View>
+          </View> */}
         </View>
 
         <View style={styles.servicesList}>
-          {services.map((service, index) => (
+          {/* {services.map((service, index) => (
             <View key={`${service.id || index}`} style={styles.serviceItem}>
               <View style={styles.serviceInfo1}>
                 <Text style={styles.serviceName} numberOfLines={1}>
@@ -466,7 +505,7 @@ const SelectTimeSlot = ({ navigation, route }) => {
                 </Text>
               </View>
             </View>
-          ))}
+          ))} */}
         </View>
       </View>
     );
@@ -868,6 +907,17 @@ const styles = StyleSheet.create({
   },
   selectedDateCircle: {
     backgroundColor: colors.primary,
+  },
+    groupSection: {
+    marginTop: 8,
+    marginBottom: 8,
+  },
+  groupLabel: {
+    fontSize: 12,
+    color: colors.secondaryText,
+    marginBottom: 10,
+    fontWeight: '600',
+    letterSpacing: 0.5,
   },
   dayName: {
     fontSize: 12,
