@@ -11,6 +11,7 @@ import {
   Alert, TouchableWithoutFeedback, Keyboard,
   Modal,
   ActivityIndicator,
+  Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -499,8 +500,33 @@ const HomeScreen = ({ navigation }) => {
             )}
           </View>
         </TouchableOpacity>
-        <View style={styles.bellContainer}>
-          <View style={styles.notificationDot} />
+        <View style={styles.actionsRight}>
+          <TouchableOpacity
+            onPress={async () => {
+              const phoneUrl = 'tel:+919999999999';
+              try {
+                const supported = await Linking.canOpenURL(phoneUrl);
+                if (supported) {
+                  await Linking.openURL(phoneUrl);
+                } else {
+                  Alert.alert('Phone', 'Calling is not supported on this device');
+                }
+              } catch (e) {
+                Alert.alert('Phone', 'Unable to initiate call');
+              }
+            }}
+            style={styles.actionButton}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="call" size={22} color={colors.primary} />
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => navigation.navigate('Notification')}
+            style={styles.actionButton}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="notifications-outline" size={22} color={colors.primary} />
+          </TouchableOpacity>
         </View>
       </View>
       {locationError ? <Text style={styles.locationErrorText}>{locationError}</Text> : null}
@@ -669,6 +695,15 @@ const styles = StyleSheet.create({
     height: 24,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  actionsRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+  },
+  actionButton: {
+    padding: 6,
+    borderRadius: 16,
   },
   bellIcon: {
     width: 45,
@@ -967,4 +1002,3 @@ const styles = StyleSheet.create({
 });
 
 export default HomeScreen;
-

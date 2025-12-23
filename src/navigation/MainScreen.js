@@ -1,5 +1,5 @@
 import React from 'react';
-import { Image, StyleSheet, View, Text, TouchableOpacity, StatusBar } from 'react-native';
+import { Image, StyleSheet, View, Text, TouchableOpacity, StatusBar, Linking, Alert } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createStackNavigator } from '@react-navigation/stack';
@@ -16,6 +16,9 @@ import HelpSupport from '../mainScreen/HelpSupport';
 import EditProfile from '../mainScreen/EditProfile';
 
 import Feather from '@expo/vector-icons/Feather';
+import Ionicons from '@expo/vector-icons/Ionicons';
+import PackagesScreen from '../mainScreen/PackagesScreen';
+import NotificationScreen from '../mainScreen/NotificationScreen';
 import ServicePriceList from '../mainScreen/ServicePriceList';
 const Tab = createBottomTabNavigator();
 const HomeStackNavigator = createStackNavigator();
@@ -63,6 +66,14 @@ const HomeStack = () => (
       options={{
         title: 'Home',
         headerShown: false,
+        headerTitleAlign: 'center',
+      }}
+    />
+    <HomeStackNavigator.Screen
+      name="Notification"
+      component={NotificationScreen}
+      options={{
+        title: 'Notifications',
         headerTitleAlign: 'center',
       }}
     />
@@ -185,7 +196,9 @@ const ProfileStack = ({ navigation, route }) => {
 const CustomTabBar = ({ state, descriptors, navigation }) => {
   return (
     <View style={styles.tabBarContainer}>
-      {state.routes.map((route, index) => {
+      {state.routes
+        .filter((r) => r.name !== 'Profile')
+        .map((route, index) => {
         const { options } = descriptors[route.key];
         const label = options.tabBarLabel !== undefined
           ? options.tabBarLabel
@@ -196,6 +209,24 @@ const CustomTabBar = ({ state, descriptors, navigation }) => {
         const isFocused = state.index === index;
 
         const onPress = () => {
+          if (route.name === 'Whatsapp') {
+            const openWhatsApp = async () => {
+              try {
+                const url = 'whatsapp://send?text=';
+                const canOpen = await Linking.canOpenURL(url);
+                if (canOpen) {
+                  await Linking.openURL(url);
+                  return;
+                }
+                await Linking.openURL('https://wa.me/');
+              } catch (e) {
+                Alert.alert('WhatsApp', 'Unable to open WhatsApp');
+              }
+            };
+            openWhatsApp();
+            return;
+          }
+
           const event = navigation.emit({
             type: 'tabPress',
             target: route.key,
@@ -214,14 +245,21 @@ const CustomTabBar = ({ state, descriptors, navigation }) => {
           });
         };
 
-        let iconSource;
-        if (route.name === 'Home') {
-          iconSource = images.homeIcon;
-        } else if (route.name === 'Orders') {
-          iconSource = images.orderIcon;
-        } else if (route.name === 'Profile') {
-          iconSource = images.profileIcon;
-        }
+        const color = isFocused ? colors.stocke : colors.secondaryText;
+        const renderIcon = () => {
+          switch (route.name) {
+            case 'Home':
+              return <Ionicons name="home-outline" size={24} color={color} />;
+            case 'Orders':
+              return <Ionicons name="bag-handle-outline" size={24} color={color} />;
+            case 'Whatsapp':
+              return <Ionicons name="logo-whatsapp" size={24} color={color} />;
+            case 'Packages':
+              return <Ionicons name="cube-outline" size={24} color={color} />;
+            default:
+              return <Feather name="circle" size={24} color={color} />;
+          }
+        };
 
         return (
           <TouchableOpacity
@@ -238,14 +276,7 @@ const CustomTabBar = ({ state, descriptors, navigation }) => {
               index === 0 && isFocused && styles.firstTabActive,
             ]}
           >
-            <Image
-              source={iconSource}
-              resizeMode="contain"
-              style={[
-                styles.icon,
-                { tintColor: isFocused ? colors.stocke : colors.secondaryText },
-              ]}
-            />
+            {renderIcon()}
             {isFocused && (
               <Text style={styles.tabLabelActive}>{label}</Text>
             )}
@@ -297,9 +328,20 @@ const MainScreen = () => {
         }}
       />
       <Tab.Screen
-        name="Profile"
-        component={ProfileStack}
+        name="Whatsapp"
+        component={HomeStack}
+        options={{
+          title: 'Whatsapp',
+        }}
       />
+      <Tab.Screen
+        name="Packages"
+        component={PackagesScreen}
+        options={{
+          title: 'Packages',
+        }}
+      />
+      <Tab.Screen name="Profile" component={ProfileStack} options={{ title: 'Profile' }} />
     </Tab.Navigator>
   );
 };
@@ -391,4 +433,3 @@ const styles = StyleSheet.create({
 });
 
 export default MainScreen;
-
