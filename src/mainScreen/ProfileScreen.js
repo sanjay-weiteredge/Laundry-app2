@@ -30,11 +30,10 @@ const ProfileScreen = () => {
     setModalVisible(true);
   };
 
-  const fetchUserProfile = useCallback(async () => {
+  const refreshProfile = useCallback(async () => {
     try {
       setLoading(true);
       const token = await AsyncStorage.getItem('userToken');
-      
       if (!token) {
         console.log('No token found, skipping profile fetch');
         return;
@@ -43,17 +42,26 @@ const ProfileScreen = () => {
       const response = await getProfile(token);
       
       if (response.success && response.data) {
-        setUserData(response.data);
+        // Add timestamp to image URL to prevent caching
+        const userData = { ...response.data };
+        if (userData.image) {
+          userData.image = `${userData.image}?t=${new Date().getTime()}`;
+        }
+        setUserData(userData);
       } else {
         console.error('Profile fetch failed:', response.message);
       }
     } catch (error) {
-      console.error('Error fetching user profile:', error);
-      showModal(error?.message || 'Unable to load profile. Please try again.', 'error');
+      console.error('Error refreshing profile:', error);
+      showModal(error?.message || 'Unable to refresh profile. Please try again.', 'error');
     } finally {
       setLoading(false);
     }
   }, []);
+
+  const fetchUserProfile = useCallback(async () => {
+    await refreshProfile();
+  }, [refreshProfile]);
 
   useEffect(() => {
     fetchUserProfile();
@@ -62,8 +70,8 @@ const ProfileScreen = () => {
   
   useFocusEffect(
     useCallback(() => {
-      fetchUserProfile();
-    }, [fetchUserProfile])
+      refreshProfile();
+    }, [refreshProfile])
   );
 
   if (loading) {
@@ -113,7 +121,8 @@ const ProfileScreen = () => {
         <View style={styles.profileSection}>
           <View style={styles.profileImageContainer}>
             <Image 
-              source={userData.image ? { uri: userData.image } : images.profileImage} 
+              source={userData.image ? { uri: userData.image } : images.profileImage}
+              onError={(error) => console.log('Image load error:', error.nativeEvent.error)}
               style={styles.profileImage}
             />
             <TouchableOpacity 

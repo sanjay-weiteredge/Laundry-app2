@@ -23,6 +23,7 @@ const SelectTimeSlot = ({ navigation, route }) => {
   const [showNoAddressModal, setShowNoAddressModal] = useState(false);
   const [showRescheduleSuccessModal, setShowRescheduleSuccessModal] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+  const [isExpress, setIsExpress] = useState(false);
   const modalAnimValue = useRef(new Animated.Value(0)).current;
 
   const { service, services: servicesParam, isReschedule, orderId, onRescheduleComplete } = route.params || {};
@@ -271,7 +272,8 @@ const SelectTimeSlot = ({ navigation, route }) => {
           slotStart: selectedSlot.start,
           slotEnd: selectedSlot.end,
           addressId: addressId,
-          notes: ''
+          notes: '',
+          isExpress: isExpress
         };
 
         console.log('Sending booking request with data:', JSON.stringify(bookingData, null, 2));
@@ -651,9 +653,24 @@ const SelectTimeSlot = ({ navigation, route }) => {
             {dates.map((date) => renderDateItem(date))}
           </ScrollView>
 
-          <Text style={styles.sectionTitle}>Available Time Slots</Text>
-          {renderTimeSlots()}
+         
 
+          <Text style={styles.sectionTitle}>Select Time Slot</Text>
+          {renderTimeSlots()}
+           <View style={styles.expressContainer}>
+            <TouchableOpacity 
+              style={styles.checkboxContainer}
+              onPress={() => setIsExpress(!isExpress)}
+            >
+              <View style={[styles.checkbox, isExpress && styles.checked]}>
+                {isExpress && <Ionicons name="checkmark" size={16} color="white" />}
+              </View>
+              <Text style={styles.expressText}>Express Service (Faster Delivery)</Text>
+            </TouchableOpacity>
+            {isExpress && (
+              <Text style={styles.expressNote}>Note: Express service may have additional charges</Text>
+            )}
+          </View>
           <View style={styles.confirmButtonContainer}>
             <TouchableOpacity
               style={[
@@ -769,6 +786,41 @@ const SelectTimeSlot = ({ navigation, route }) => {
 };
 
 const styles = StyleSheet.create({
+  expressContainer: {
+    marginBottom: 0,
+    paddingHorizontal: 5,
+  },
+  checkboxContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 5,
+  },
+  checkbox: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 2,
+    borderColor: colors.primary,
+    marginRight: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  confirmButtonContainer:{
+   
+  },
+  checked: {
+    backgroundColor: colors.primary,
+  },
+  expressText: {
+    fontSize: 16,
+    color: colors.text,
+  },
+  expressNote: {
+    fontSize: 12,
+    color: colors.gray,
+    marginLeft: 32,
+    fontStyle: 'italic',
+  },
   container: {
     flex: 1,
     backgroundColor: '#fff',
