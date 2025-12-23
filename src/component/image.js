@@ -1,5 +1,5 @@
 
-import splashIcon from '../assests/splash-icon.png';
+import splashIcon from '../assests/image.png';
 import mainImage from '../assests/main.jpg';
 import homeIcon from '../assests/home-icon.png';
 import orderIcon from '../assests/order-icon.png';
