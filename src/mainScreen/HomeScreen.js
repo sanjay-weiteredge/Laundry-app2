@@ -468,7 +468,7 @@ const HomeScreen = ({ navigation }) => {
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      <View style={styles.header}>
+      {/* <View style={styles.header}>
         <View style={styles.avatarContainer}>
           <Image 
             source={userData.image ? { uri: userData.image } : images.profileImage} 
@@ -488,7 +488,7 @@ const HomeScreen = ({ navigation }) => {
           }}
         >
           <Text style={styles.headerName} numberOfLines={1}>
-            {userData.name || 'Guest User'}
+            {userData.name || 'User'}
           </Text>
           <View style={styles.headerAddressRow}>
             {detectingLocation ? (
@@ -528,7 +528,7 @@ const HomeScreen = ({ navigation }) => {
             <Ionicons name="notifications-outline" size={22} color={colors.primary} />
           </TouchableOpacity>
         </View>
-      </View>
+      </View> */}
       {locationError ? <Text style={styles.locationErrorText}>{locationError}</Text> : null}
       <ScrollView contentContainerStyle={styles.content}>
 

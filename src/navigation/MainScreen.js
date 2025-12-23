@@ -3,6 +3,7 @@ import { Image, StyleSheet, View, Text, TouchableOpacity, StatusBar, Linking, Al
 import { LinearGradient } from 'expo-linear-gradient';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createStackNavigator } from '@react-navigation/stack';
+import { createDrawerNavigator } from '@react-navigation/drawer';
 import colors from '../component/color';
 import images from '../component/image';
 import HomeScreen from '../mainScreen/HomeScreen';
@@ -14,6 +15,8 @@ import Myorder from '../mainScreen/Myorder';
 import PrivacyPolicy from '../mainScreen/PrivacyPolicy';
 import HelpSupport from '../mainScreen/HelpSupport';
 import EditProfile from '../mainScreen/EditProfile';
+import GlobalHeader from '../component/GlobalHeader';
+import DrawerContent from '../component/DrawerContent';
 
 import Feather from '@expo/vector-icons/Feather';
 import Ionicons from '@expo/vector-icons/Ionicons';
@@ -23,6 +26,7 @@ import ServicePriceList from '../mainScreen/ServicePriceList';
 const Tab = createBottomTabNavigator();
 const HomeStackNavigator = createStackNavigator();
 const ProfileStackNavigator = createStackNavigator();
+const Drawer = createDrawerNavigator();
 
 
 const renderGradientHeader = ({ route, options, navigation, back }) => {
@@ -54,7 +58,7 @@ const renderGradientHeader = ({ route, options, navigation, back }) => {
   );
 };
 
-const HomeStack = () => (
+const HomeStack = ({ navigation }) => (
   <HomeStackNavigator.Navigator
     screenOptions={{
       header: renderGradientHeader,
@@ -65,7 +69,10 @@ const HomeStack = () => (
       component={HomeScreen}
       options={{
         title: 'Home',
-        headerShown: false,
+        headerShown: true,
+        header: () => (
+          <GlobalHeader title="Home" />
+        ),
         headerTitleAlign: 'center',
       }}
     />
@@ -287,7 +294,7 @@ const CustomTabBar = ({ state, descriptors, navigation }) => {
   );
 };
 
-const MainScreen = () => {
+const TabNavigator = () => {
   return (
     <Tab.Navigator
       tabBar={(props) => <CustomTabBar {...props} />}
@@ -298,33 +305,18 @@ const MainScreen = () => {
       <Tab.Screen
         name="Home"
         component={HomeStack}
+        options={{
+          headerShown: false,
+        }}
       />
       <Tab.Screen
         name="Orders"
         component={OrdersScreen}
         options={{
-
-          headerTitle: () => (
-            <View style={{ flex: 1, justifyContent: 'center' }}>
-              <Text style={{ fontSize: 18, fontWeight: '600', color: '#fff' }}>Orders history</Text>
-            </View>
-          ),
-          headerTitleAlign: 'center',
           headerShown: true,
-          headerStyle: {
-            backgroundColor: 'transparent',
-            elevation: 0,
-            shadowOpacity: 0,
-          },
-          headerBackground: () => (
-            <LinearGradient
-              colors={[colors.primary, '#FFA07A']}
-              style={StyleSheet.absoluteFill}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
-            />
+          header: () => (
+            <GlobalHeader title="Order History" />
           ),
-          headerTintColor: '#fff',
         }}
       />
       <Tab.Screen
@@ -338,11 +330,37 @@ const MainScreen = () => {
         name="Packages"
         component={PackagesScreen}
         options={{
-          title: 'Packages',
+          headerShown: true,
+          header: () => (
+            <GlobalHeader title="Packages" />
+          ),
         }}
       />
       <Tab.Screen name="Profile" component={ProfileStack} options={{ title: 'Profile' }} />
     </Tab.Navigator>
+  );
+};
+
+const MainScreen = () => {
+  return (
+    <Drawer.Navigator
+      drawerContent={(props) => <DrawerContent {...props} />}
+      screenOptions={{
+        headerShown: false,
+        drawerType: 'front',
+        drawerStyle: {
+          width: 280,
+        },
+      }}
+    >
+      <Drawer.Screen
+        name="MainTabs"
+        component={TabNavigator}
+        options={{
+          drawerLabel: 'Home',
+        }}
+      />
+    </Drawer.Navigator>
   );
 };
 
