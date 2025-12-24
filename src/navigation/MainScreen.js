@@ -8,7 +8,6 @@ import colors from '../component/color';
 import images from '../component/image';
 import HomeScreen from '../mainScreen/HomeScreen';
 import OrdersScreen from '../mainScreen/OrdersScreen';
-import ProfileScreen from '../mainScreen/ProfileScreen';
 import SelectTimeSlot from '../mainScreen/SelectTimeSlot';
 import Addresss from '../mainScreen/Addresss';
 import Myorder from '../mainScreen/Myorder';
@@ -25,7 +24,6 @@ import NotificationScreen from '../mainScreen/NotificationScreen';
 import ServicePriceList from '../mainScreen/ServicePriceList';
 const Tab = createBottomTabNavigator();
 const HomeStackNavigator = createStackNavigator();
-const ProfileStackNavigator = createStackNavigator();
 const Drawer = createDrawerNavigator();
 
 
@@ -92,96 +90,7 @@ const HomeStack = ({ navigation }) => (
         headerTitleAlign: 'center',
       }}
     />
-  </HomeStackNavigator.Navigator>
-);
-
-const ProfileStack = ({ navigation, route }) => {
-  // Reset to ProfileHome when the tab is pressed
-  React.useEffect(() => {
-    const unsubscribe = navigation.addListener('tabPress', (e) => {
-      // Prevent default behavior
-      e.preventDefault();
-      
-      // Reset to ProfileHome when the tab is pressed
-      navigation.navigate('Profile', { 
-        screen: 'ProfileHome',
-        params: { 
-          resetStack: true 
-        }
-      });
-    });
-
-    return unsubscribe;
-  }, [navigation]);
-
-  // Check if we're coming from a deep link
-  const isDeepLink = route.params?.fromDeepLink;
-  
-  return (
-    <ProfileStackNavigator.Navigator
-      initialRouteName={isDeepLink ? 'Address' : 'ProfileHome'}
-      screenOptions={({ navigation, route }) => ({
-        header: (props) => renderGradientHeader({ ...props, navigation, route }),
-        headerShown: true,
-        headerBackTitle: 'Back',
-      })}
-    >
-    <ProfileStackNavigator.Screen
-      name="ProfileHome"
-      component={ProfileScreen}
-      options={{
-        title: 'Profile',
-        headerTitleAlign: 'center',
-        headerShown: true,
-        headerBackTitle: 'Back',
-      }}
-    />
-    <ProfileStackNavigator.Screen
-      name="Myorder"
-      component={Myorder}
-      options={{
-        title: 'My Orders',
-        headerTitleAlign: 'center',
-        headerShown: true,
-        headerBackTitle: 'Back',
-      }}
-    />
-    
-    <ProfileStackNavigator.Screen
-      name="Address"
-      component={Addresss}
-      options={{
-        title: 'Saved Addresses',
-        headerTitleAlign: 'center',
-        headerShown: true,
-        headerBackTitle: 'Back',
-      }}
-    />
-    <ProfileStackNavigator.Screen
-      name="SelectTimeSlot"
-      component={SelectTimeSlot}
-      options={{
-        title: 'Select Time Slot',
-        headerTitleAlign: 'center',
-      }}
-    />
-    <ProfileStackNavigator.Screen
-      name="PrivacyPolicy"
-      component={PrivacyPolicy}
-      options={{
-        title: 'Privacy Policy',
-        headerTitleAlign: 'center',
-      }}
-    />
-    <ProfileStackNavigator.Screen
-      name="HelpSupport"
-      component={HelpSupport}
-      options={{
-        title: 'Help & Support',
-        headerTitleAlign: 'center',
-      }}
-    />
-    <ProfileStackNavigator.Screen
+    <HomeStackNavigator.Screen
       name="EditProfile"
       component={EditProfile}
       options={{
@@ -189,7 +98,39 @@ const ProfileStack = ({ navigation, route }) => {
         headerTitleAlign: 'center',
       }}
     />
-    <ProfileStackNavigator.Screen
+    <HomeStackNavigator.Screen
+      name="Myorder"
+      component={Myorder}
+      options={{
+        title: 'My Orders',
+        headerTitleAlign: 'center',
+      }}
+    />
+    <HomeStackNavigator.Screen
+      name="Address"
+      component={Addresss}
+      options={{
+        title: 'Saved Addresses',
+        headerTitleAlign: 'center',
+      }}
+    />
+    <HomeStackNavigator.Screen
+      name="PrivacyPolicy"
+      component={PrivacyPolicy}
+      options={{
+        title: 'Privacy Policy',
+        headerTitleAlign: 'center',
+      }}
+    />
+    <HomeStackNavigator.Screen
+      name="HelpSupport"
+      component={HelpSupport}
+      options={{
+        title: 'Help & Support',
+        headerTitleAlign: 'center',
+      }}
+    />
+    <HomeStackNavigator.Screen
       name="PriceList"
       component={ServicePriceList}
       options={{
@@ -197,16 +138,14 @@ const ProfileStack = ({ navigation, route }) => {
         headerTitleAlign: 'center',
       }}
     />
-    </ProfileStackNavigator.Navigator>
-    
-  );
-};
+  </HomeStackNavigator.Navigator>
+);
+
 
 const CustomTabBar = ({ state, descriptors, navigation }) => {
   return (
     <View style={styles.tabBarContainer}>
       {state.routes
-        .filter((r) => r.name !== 'Profile')
         .map((route, index) => {
         const { options } = descriptors[route.key];
         const label = options.tabBarLabel !== undefined
@@ -221,13 +160,21 @@ const CustomTabBar = ({ state, descriptors, navigation }) => {
           if (route.name === 'Whatsapp') {
             const openWhatsApp = async () => {
               try {
-                const url = 'whatsapp://send?text=';
-                const canOpen = await Linking.canOpenURL(url);
+                // Provided number: "95503 96999"
+                const rawNumber = '95503 96999';
+                const digitsOnly = rawNumber.replace(/\D/g, '');
+                // If 10 digits (likely India), prefix +91. Otherwise assume it already includes country code.
+                const phoneWithCC = digitsOnly.length === 10 ? `+91${digitsOnly}` : `+${digitsOnly}`;
+
+                const appUrl = `whatsapp://send?phone=${phoneWithCC}`;
+                const webUrl = `https://wa.me/${encodeURIComponent(phoneWithCC)}`;
+
+                const canOpen = await Linking.canOpenURL(appUrl);
                 if (canOpen) {
-                  await Linking.openURL(url);
+                  await Linking.openURL(appUrl);
                   return;
                 }
-                await Linking.openURL('https://wa.me/');
+                await Linking.openURL(webUrl);
               } catch (e) {
                 Alert.alert('WhatsApp', 'Unable to open WhatsApp');
               }
@@ -338,7 +285,6 @@ const TabNavigator = () => {
           ),
         }}
       />
-      <Tab.Screen name="Profile" component={ProfileStack} options={{ title: 'Profile' }} />
     </Tab.Navigator>
   );
 };

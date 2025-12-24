@@ -657,7 +657,7 @@ const SelectTimeSlot = ({ navigation, route }) => {
               style={styles.closeButton}
               onPress={() => {
                 hideSuccessModal();
-                navigation.navigate('Profile', { screen: 'Myorder' });
+                navigation.navigate('Home', { bookingCompleted: true });
               }}
             >
               <Text style={styles.closeButtonText}>Done</Text>
@@ -780,11 +780,9 @@ const SelectTimeSlot = ({ navigation, route }) => {
                 onPress={() => {
                   setShowNoAddressModal(false);
                   // Navigate directly to the Address screen
-                  navigation.navigate('Profile', {
-                    screen: 'Address',
-                    params: {
-                      fromDeepLink: true
-                    }
+                  navigation.navigate('MainTabs', {
+                    screen: 'Home',
+                    params: { screen: 'Address', params: { fromDeepLink: true } },
                   });
                 }}
               >

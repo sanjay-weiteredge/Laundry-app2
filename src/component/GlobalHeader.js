@@ -7,9 +7,27 @@ import colors from './color';
 
 const GlobalHeader = ({ title, showBack = false }) => {
   const navigation = useNavigation();
-
+   const st = navigation.getState?.();
+    const currentRoute = st?.routes?.[st.index]?.name;
   const handleNotificationPress = () => {
-    navigation.navigate('Home', { screen: 'Notification' });
+   
+
+
+    // When on Home stack (current route is 'Home'), navigate directly within the stack
+    if (currentRoute === 'Home') {
+      navigation.navigate('Notification');
+      return;
+    }
+
+    // Otherwise, navigate via parent (Tab) into Home tab's stack
+    const parent = navigation.getParent?.();
+    if (parent) {
+      parent.navigate('Home', { screen: 'Notification' });
+      return;
+    }
+
+    // Last resort
+    navigation.navigate('Notification');
   };
 
   const handleCallPress = () => {
@@ -51,15 +69,15 @@ const GlobalHeader = ({ title, showBack = false }) => {
     >
       <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
       <View style={styles.headerContainer}>
-        {/* Left side - Hamburger icon */}
+       
         <TouchableOpacity onPress={handleDrawerOpen} style={styles.iconButton}>
           <Feather name="menu" size={24} color="white" />
         </TouchableOpacity>
 
-        {/* Center - Title */}
+     
         <Text style={styles.headerTitle}>{title}</Text>
 
-        {/* Right side - Notification and Call icons */}
+        {currentRoute=='Home' && (
         <View style={styles.rightIcons}>
           <TouchableOpacity onPress={handleNotificationPress} style={styles.iconButton}>
             <Ionicons name="notifications-outline" size={24} color="white" />
@@ -68,6 +86,7 @@ const GlobalHeader = ({ title, showBack = false }) => {
             <Ionicons name="call-outline" size={24} color="white" />
           </TouchableOpacity>
         </View>
+        )}
       </View>
     </LinearGradient>
   );

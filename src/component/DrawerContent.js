@@ -14,47 +14,26 @@ import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import colors from './color';
-import { getProfile } from '../services/userAuth';
+import { useUser } from '../context/UserContext';
 import { Linking } from 'react-native';
 import { fetchAddresses } from '../services/address';
+import * as Location from 'expo-location';
 
 
 const DrawerContent = ({ navigation }) => {
-  const [userData, setUserData] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [addressText, setAddressText] = useState('');
+  const { user, loading: userLoading, refreshUser } = useUser();
+    const [addressText, setAddressText] = useState('');
+  const [detectingLocation, setDetectingLocation] = useState(false);
+  const [locationError, setLocationError] = useState('');
 
-  useEffect(() => {
-    fetchUserProfile();
-    fetchUserAddress();
-  }, []);
 
   useFocusEffect(
     useCallback(() => {
-      fetchUserProfile();
-      fetchUserAddress();
-    }, [])
+      refreshUser();
+      detectCurrentLocation();
+    }, [refreshUser])
   );
 
-  const fetchUserProfile = async () => {
-    try {
-      setLoading(true);
-      const token = await AsyncStorage.getItem('userToken');
-      if (!token) {
-        setLoading(false);
-        return;
-      }
-
-      const response = await getProfile(token);
-      if (response.success && response.data) {
-        setUserData(response.data);
-      }
-    } catch (error) {
-      console.error('Error fetching profile:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const pickAddressText = (addr) => {
     if (!addr) return '';
@@ -64,8 +43,118 @@ const DrawerContent = ({ navigation }) => {
       .join(' ');
     const fallback = addr.address_line || addr.addressLine || addr.address1 || addr.addressLine1 || addr.street;
     const text = primary || secondary || fallback || '';
-    return text.length > 40 ? text.slice(0, 37) + '...' : text;
+    return text;
   };
+
+  // Save location to cache
+  const saveLocationToCache = async (coords, address, meta) => {
+    try {
+      const locationData = {
+        coords,
+        address,
+        meta,
+        timestamp: new Date().toISOString()
+      };
+      await AsyncStorage.setItem('@cachedLocation', JSON.stringify(locationData));
+    } catch (error) {
+      console.error('Error saving location to cache:', error);
+    }
+  };
+
+  // Load location from cache
+  const loadCachedLocation = async () => {
+    try {
+      const cachedData = await AsyncStorage.getItem('@cachedLocation');
+      if (cachedData) {
+        const { address, meta } = JSON.parse(cachedData);
+        setAddressText([address, meta].filter(Boolean).join(' '));
+        return JSON.parse(cachedData).coords;
+      }
+    } catch (error) {
+      console.error('Error loading cached location:', error);
+    }
+    return null;
+  };
+
+  const updateAddressFromCoords = async (coords) => {
+    try {
+      const reverse = await Location.reverseGeocodeAsync(coords);
+      if (reverse.length > 0) {
+        const place = reverse[0];
+        const description = [place.name, place.street].filter(Boolean).join(', ');
+        const meta = [place.city ?? place.subregion, place.region, place.postalCode]
+          .filter(Boolean)
+          .join(' ');
+        
+        setAddressText([description, meta].filter(Boolean).join(' ') || 'Current location detected');
+        
+        await saveLocationToCache(coords, description, meta);
+      } else {
+        setAddressText('Current location detected');
+      }
+    } catch (error) {
+      console.error('Reverse geocoding error:', error);
+      setLocationError('Unable to get address');
+    }
+  };
+
+  const detectCurrentLocation = useCallback(async () => {
+    try {
+      setDetectingLocation(true);
+      setLocationError('');
+
+      const cachedCoords = await loadCachedLocation();
+      if (cachedCoords) {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status !== 'granted') {
+          setLocationError('Location permission denied');
+          return;
+        }
+        
+        Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.Low,
+          maximumAge: 1000, // 1 second
+        }).then((freshLocation) => {
+          if (freshLocation) {
+            updateAddressFromCoords(freshLocation.coords);
+          }
+        }).catch(error => {
+          console.error('Error getting fresh location:', error);
+        });
+        return;
+      }
+      
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        setLocationError('Location permission denied');
+        setAddressText('Location permission needed');
+        return;
+      }
+
+      const lastLocation = await Location.getLastKnownPositionAsync();
+      if (lastLocation) {
+        await updateAddressFromCoords(lastLocation.coords);
+      }
+
+      Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Low,
+        maximumAge: 1000, // 1 second
+      }).then((freshLocation) => {
+        if (freshLocation) {
+          updateAddressFromCoords(freshLocation.coords);
+        }
+      }).catch(error => {
+        console.error('Error getting fresh location:', error);
+      });
+      
+    } catch (error) {
+      console.error('Location detection error:', error);
+      setLocationError('Unable to fetch your location');
+      setAddressText('Could not fetch location');
+    } finally {
+      setDetectingLocation(false);
+    }
+  }, []);
 
   const fetchUserAddress = async () => {
     try {
@@ -89,7 +178,7 @@ const DrawerContent = ({ navigation }) => {
           const parsed = JSON.parse(cachedLoc);
           const text = [parsed?.address, parsed?.meta].filter(Boolean).join(' ');
           if (text) {
-            setAddressText(text.length > 40 ? text.slice(0, 37) + '...' : text);
+            setAddressText(text);
             return;
           }
         } catch {}
@@ -108,6 +197,7 @@ const DrawerContent = ({ navigation }) => {
       setAddressText('');
     }
   };
+
 
   const handleLogout = () => {
     Alert.alert(
@@ -137,21 +227,32 @@ const DrawerContent = ({ navigation }) => {
   };
 
   const menuItems = [
+    // {
+    //   icon: 'person-outline',
+    //   label: 'Profile',
+    //   onPress: () => {
+    //     navigation.closeDrawer();
+    //     // Navigate to MainTabs (Tab Navigator) then to Profile tab
+    //     navigation.navigate('MainTabs', { screen: 'Profile', params: { screen: 'ProfileHome' } });
+    //   },
+    // },
+    {
+      icon: 'home-outline',
+      label: 'Home',
+      onPress: () => {
+        navigation.closeDrawer();
+        navigation.navigate('MainTabs', { screen: 'Home' });
+      },
+    },
     {
       icon: 'person-outline',
       label: 'Profile',
       onPress: () => {
         navigation.closeDrawer();
-        // Navigate to MainTabs (Tab Navigator) then to Profile tab
-        navigation.navigate('MainTabs', { screen: 'Profile', params: { screen: 'ProfileHome' } });
-      },
-    },
-    {
-      icon: 'create-outline',
-      label: 'Edit Profile',
-      onPress: () => {
-        navigation.closeDrawer();
-        navigation.navigate('MainTabs', { screen: 'Profile', params: { screen: 'EditProfile' } });
+        navigation.navigate('MainTabs', {
+          screen: 'Home',
+          params: { screen: 'EditProfile' },
+        });
       },
     },
     {
@@ -159,7 +260,7 @@ const DrawerContent = ({ navigation }) => {
       label: 'My Orders',
       onPress: () => {
         navigation.closeDrawer();
-        navigation.navigate('MainTabs', { screen: 'Profile', params: { screen: 'Myorder' } });
+        navigation.navigate('MainTabs', { screen: 'Home', params: { screen: 'Myorder' } });
       },
     },
     {
@@ -167,7 +268,7 @@ const DrawerContent = ({ navigation }) => {
   label: 'About Us',
   onPress: () => {
     navigation.closeDrawer();
-    Linking.openURL('https://weiteredge.com/');
+    Linking.openURL('https://www.techruitz.com/');
   },
     },
     {
@@ -175,7 +276,7 @@ const DrawerContent = ({ navigation }) => {
       label: 'Saved Addresses',
       onPress: () => {
         navigation.closeDrawer();
-        navigation.navigate('MainTabs', { screen: 'Profile', params: { screen: 'Address' } });
+        navigation.navigate('MainTabs', { screen: 'Home', params: { screen: 'Address' } });
       },
     },
     {
@@ -183,7 +284,7 @@ const DrawerContent = ({ navigation }) => {
       label: 'Privacy Policy',
       onPress: () => {
         navigation.closeDrawer();
-        navigation.navigate('MainTabs', { screen: 'Profile', params: { screen: 'PrivacyPolicy' } });
+        navigation.navigate('MainTabs', { screen: 'Home', params: { screen: 'PrivacyPolicy' } });
       },
     },
     {
@@ -191,7 +292,7 @@ const DrawerContent = ({ navigation }) => {
       label: 'Help & Support',
       onPress: () => {
         navigation.closeDrawer();
-        navigation.navigate('MainTabs', { screen: 'Profile', params: { screen: 'HelpSupport' } });
+        navigation.navigate('MainTabs', { screen: 'Home', params: { screen: 'HelpSupport' } });
       },
     },
   ];
@@ -201,13 +302,13 @@ const DrawerContent = ({ navigation }) => {
       <ScrollView style={styles.scrollView}>
         {/* User Profile Section */}
         <View style={styles.profileSection}>
-          {loading ? (
+          {userLoading ? (
             <ActivityIndicator size="small" color="#fff" />
           ) : (
             <View style={styles.headerCard}>
               <View style={styles.avatarContainer}>
-                {userData?.image ? (
-                  <Image source={{ uri: userData.image }} style={styles.avatar} />
+                {user?.image ? (
+                  <Image key={user.image} source={{ uri: user.image }} style={styles.avatar} />
                 ) : (
                   <View style={styles.avatarPlaceholder}>
                     <Ionicons name="person" size={20} color={colors.primary} />
@@ -215,9 +316,9 @@ const DrawerContent = ({ navigation }) => {
                 )}
               </View>
               <View style={styles.headerTextWrap}>
-                <Text style={styles.headerTitle}>{userData?.name || 'User'}</Text>
-                <Text style={styles.headerSubtitle} numberOfLines={3}>
-                  {addressText || 'Address'}
+                <Text style={styles.headerTitle}>{user?.name || 'User'}</Text>
+                <Text style={styles.headerSubtitle} numberOfLines={0}>
+                  {detectingLocation ? 'Detecting location...' : (locationError || addressText || 'Address')}
                 </Text>
               </View>
             </View>
@@ -245,6 +346,9 @@ const DrawerContent = ({ navigation }) => {
           <Text style={styles.logoutText}>Logout</Text>
         </TouchableOpacity>
       </ScrollView>
+      <View style={styles.versionInfo}>
+        <Text style={styles.versionText}>Version: 15.0.8 (433)</Text>
+      </View>
     </SafeAreaView>
   );
 };
@@ -339,6 +443,14 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: colors.primary,
     marginLeft: 12,
+  },
+  versionInfo: {
+    padding: 20,
+    alignItems: 'center',
+  },
+  versionText: {
+    fontSize: 12,
+    color: colors.secondaryText,
   },
 });
 

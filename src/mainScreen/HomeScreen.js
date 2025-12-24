@@ -13,6 +13,7 @@ import {
   ActivityIndicator,
   Linking,
   FlatList,
+  RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -23,7 +24,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getProfile } from '../services/userAuth';
 import { fetchAddresses } from '../services/address';
 import { fetchUserServices } from '../services/services';
-import * as Location from 'expo-location';
+import { useUser } from '../context/UserContext';
 import AutoSwiper from '../component/swiper';
 
 const getAddressIdentifier = (address) =>
@@ -80,7 +81,8 @@ const getAddressIcon = (label = 'Home') => {
       return 'home-outline';
   }
 };
-const HomeScreen = ({ navigation }) => {
+const HomeScreen = ({ navigation, route }) => {
+  const { refreshUser } = useUser();
 
   const [loading, setLoading] = useState(false);
   const [userData, setUserData] = useState({
@@ -95,6 +97,7 @@ const HomeScreen = ({ navigation }) => {
   const [loadingServices, setLoadingServices] = useState(false);
   const [showPromoCard, setShowPromoCard] = useState(true);
   const [selectedServices, setSelectedServices] = useState({});
+  const [refreshing, setRefreshing] = useState(false);
 
   const toggleServiceSelection = (service) => {
     setSelectedServices(prev => {
@@ -116,10 +119,6 @@ const HomeScreen = ({ navigation }) => {
   };
   const [locationModalVisible, setLocationModalVisible] = useState(false);
   const [selectedAddress, setSelectedAddress] = useState(null);
-  const [detectedLocation, setDetectedLocation] = useState('');
-  const [detectingLocation, setDetectingLocation] = useState(false);
-  const [locationError, setLocationError] = useState('');
-  const [detectedMetaLine, setDetectedMetaLine] = useState('');
 
   const handleServiceSelect = (service) => {
     toggleServiceSelection(service);
@@ -214,160 +213,50 @@ const HomeScreen = ({ navigation }) => {
     }
   }, []);
 
-  // Save location to cache
-  const saveLocationToCache = async (coords, address, meta) => {
-    try {
-      const locationData = {
-        coords,
-        address,
-        meta,
-        timestamp: new Date().toISOString()
-      };
-      await AsyncStorage.setItem('@cachedLocation', JSON.stringify(locationData));
-    } catch (error) {
-      console.error('Error saving location to cache:', error);
-    }
-  };
-
-  // Load location from cache
-  const loadCachedLocation = async () => {
-    try {
-      const cachedData = await AsyncStorage.getItem('@cachedLocation');
-      if (cachedData) {
-        const { coords, address, meta } = JSON.parse(cachedData);
-        setDetectedLocation(address);
-        setDetectedMetaLine(meta);
-        return coords;
-      }
-    } catch (error) {
-      console.error('Error loading cached location:', error);
-    }
-    return null;
-  };
-
-  const updateAddressFromCoords = async (coords) => {
-    try {
-      const reverse = await Location.reverseGeocodeAsync(coords);
-      if (reverse.length > 0) {
-        const place = reverse[0];
-        const description = [place.name, place.street].filter(Boolean).join(', ');
-        const meta = [place.city ?? place.subregion, place.region, place.postalCode]
-          .filter(Boolean)
-          .join(' ');
-        
-        // Update state
-        setDetectedLocation(description || 'Current location detected');
-        setDetectedMetaLine(meta);
-        
-        // Save to cache
-        await saveLocationToCache(coords, description, meta);
-      } else {
-        setDetectedLocation('Current location detected');
-        setDetectedMetaLine('');
-      }
-    } catch (error) {
-      console.error('Reverse geocoding error:', error);
-      setLocationError('Unable to get address');
-    }
-  };
-
-  const detectCurrentLocation = useCallback(async () => {
-    try {
-      setDetectingLocation(true);
-      setLocationError('');
-
-      // First try to load from cache
-      const cachedCoords = await loadCachedLocation();
-      if (cachedCoords) {
-        // We already updated the UI from loadCachedLocation
-        // Now check if we should update in the background
-        const { status } = await Location.requestForegroundPermissionsAsync();
-        if (status !== 'granted') {
-          setLocationError('Location permission denied');
-          return;
-        }
-        
-        // Get fresh location in the background
-        Location.getCurrentPositionAsync({
-          accuracy: Location.Accuracy.Low,
-          maximumAge: 1000, // 1 second
-        }).then((freshLocation) => {
-          if (freshLocation) {
-            updateAddressFromCoords(freshLocation.coords);
-          }
-        }).catch(error => {
-          console.error('Error getting fresh location:', error);
-        });
-        return;
-      }
-      
-      // No cache found, proceed with normal flow
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') {
-        setLocationError('Location permission denied');
-        setDetectedLocation('');
-        return;
-      }
-
-      // First try to get the last known location (fast)
-      const lastLocation = await Location.getLastKnownPositionAsync();
-      if (lastLocation) {
-        await updateAddressFromCoords(lastLocation.coords);
-      }
-
-      // Then get fresh location in the background
-      Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.Low,
-        maximumAge: 1000, // 1 second
-      }).then((freshLocation) => {
-        if (freshLocation) {
-          updateAddressFromCoords(freshLocation.coords);
-        }
-      }).catch(error => {
-        console.error('Error getting fresh location:', error);
-      });
-      
-    } catch (error) {
-      console.error('Location detection error:', error);
-      setLocationError('Unable to fetch your location');
-      setDetectedLocation('');
-      setDetectedMetaLine('');
-    } finally {
-      setDetectingLocation(false);
-    }
-  }, []);
 
   useEffect(() => {
     fetchUserProfile();
     fetchServices();
-    detectCurrentLocation();
-  }, [fetchUserProfile, fetchServices, detectCurrentLocation]);
+  }, [fetchUserProfile, fetchServices]);
 
   
   useFocusEffect(
     useCallback(() => {
+      if (route.params?.refresh) {
+        refreshUser();
+        // Clear the refresh param to avoid re-triggering
+        navigation.setParams({ refresh: false });
+      }
+
+      // Reset selected services if a booking was just completed
+
+      if (route.params?.bookingCompleted) {
+        setSelectedServices({});
+        // Clean up the param to avoid resetting on every focus
+        navigation.setParams({ bookingCompleted: undefined });
+      }
+
+      // Initial data fetch
       fetchUserProfile();
       fetchServices();
       fetchSavedAddresses();
-      detectCurrentLocation();
-      
-    
-      if (navigation?.route?.params?.hidePromo) {
+
+      // Handle other params like hidePromo
+      if (route.params?.hidePromo) {
         setShowPromoCard(false);
-      
         navigation.setParams({ hidePromo: undefined });
       }
-    }, [fetchUserProfile, fetchServices, fetchSavedAddresses, detectCurrentLocation, navigation?.route?.params?.hidePromo])
+    }, [route.params?.bookingCompleted, route.params?.hidePromo])
   );
 
   const selectedAddressPrimary = selectedAddress
     ? [selectedAddress?.house, selectedAddress?.street].filter(Boolean).join(', ')
-    : detectedLocation || 'Detecting location...';
+    : 'Detecting location...';
   const selectedAddressSecondary = selectedAddress
     ? [selectedAddress?.city, selectedAddress?.state, selectedAddress?.pincode || selectedAddress?.postal_code]
         .filter(Boolean)
         .join(' ')
-    : detectedMetaLine;
+    : '';
   const headerAddressLine = [selectedAddressPrimary, selectedAddressSecondary].filter(Boolean).join(' ');
   const selectedAddressLabel = selectedAddress?.label || 'Current Location';
   
@@ -380,6 +269,15 @@ const HomeScreen = ({ navigation }) => {
     }
     setLocationModalVisible(false);
   }, []);
+
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    Promise.all([
+      fetchUserProfile(),
+      fetchServices(),
+      fetchSavedAddresses(),
+    ]).finally(() => setRefreshing(false));
+  }, []); // Dependencies are stable
 
   const fetchSavedAddresses = useCallback(async () => {
       try {
@@ -423,7 +321,6 @@ const HomeScreen = ({ navigation }) => {
               style={styles.addressOption}
               onPress={() => {
                 setSelectedAddress(null);
-                detectCurrentLocation();
                 setLocationModalVisible(false);
               }}
             >
@@ -434,7 +331,7 @@ const HomeScreen = ({ navigation }) => {
                 <View>
                   <Text style={styles.addressOptionLabel}>Use current location</Text>
                   <Text style={styles.addressOptionSummary} numberOfLines={2}>
-                    {detectedLocation || 'Detecting location...'}
+                    {'Detecting location...'}
                   </Text>
                 </View>
               </View>
@@ -560,7 +457,6 @@ const HomeScreen = ({ navigation }) => {
           </TouchableOpacity>
         </View>
       </View> */}
-      {locationError ? <Text style={styles.locationErrorText}>{locationError}</Text> : null}
       <FlatList
         data={services}
         keyExtractor={(item) => String(item.id)}
@@ -612,6 +508,14 @@ const HomeScreen = ({ navigation }) => {
           ) : null
         )}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={[colors.primary]}
+            tintColor={colors.primary}
+          />
+        }
       />
 
       {renderAddressModal()}
@@ -726,17 +630,16 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
   },
   gridIconWrap: {
-    width: 40,
-    height: 40,
+    width: 50,
+    height: 50,
     borderRadius: 10,
-    backgroundColor: 'rgba(240,131,131,0.12)',
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 6,
   },
   gridIcon: {
-    width: 28,
-    height: 28,
+    width: 55,
+    height: 55,
   },
   gridTick: {
     position: 'absolute',

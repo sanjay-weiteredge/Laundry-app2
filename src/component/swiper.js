@@ -1,10 +1,11 @@
-import React, { useRef, useEffect } from 'react';
-import { View, Image, StyleSheet, Dimensions } from 'react-native';
+import React, { useRef, useEffect, useState } from 'react';
+import { View, Image, StyleSheet, Dimensions, ActivityIndicator } from 'react-native';
 import Swiper from 'react-native-swiper';
+import { getActivePosters } from '../services/poster';
 
 const { width } = Dimensions.get('window');
 
-const posterImages = [
+const fallbackImages = [
   require('../assests/poster/1.jpg'),
   require('../assests/poster/2.jpg'),
   require('../assests/poster/3.jpg'),
@@ -13,16 +14,53 @@ const posterImages = [
 
 const AutoSwiper = () => {
   const swiperRef = useRef(null);
+  const [images, setImages] = useState([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const timer = setInterval(() => {
       if (swiperRef.current) {
         swiperRef.current.scrollBy(1, true);
       }
-    }, 2000); // Change slide every 2 seconds
+    }, 2000);
 
     return () => clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+    const fetchPosters = async () => {
+      try {
+        const posters = await getActivePosters();
+        const urls = posters.map(p => p.image_url).filter(Boolean);
+        if (isMounted) {
+          setImages(urls.length > 0 ? urls : fallbackImages);
+        }
+      } catch (error) {
+        if (isMounted) {
+          setImages(fallbackImages);
+        }
+      } finally {
+        if (isMounted) {
+          setLoading(false);
+        }
+      }
+    };
+
+    fetchPosters();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  if (loading) {
+    return (
+      <View style={[styles.container, styles.loadingContainer]}>
+        <ActivityIndicator size="large" />
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
@@ -30,17 +68,17 @@ const AutoSwiper = () => {
         ref={swiperRef}
         style={styles.wrapper}
         showsButtons={false}
-        autoplay={false} 
+        autoplay={false}
         loop={true}
         showsPagination={true}
         dotStyle={styles.paginationDot}
         activeDotStyle={styles.paginationActiveDot}
         paginationStyle={styles.pagination}
       >
-        {posterImages.map((image, index) => (
+        {images.map((image, index) => (
           <View key={index} style={styles.slide}>
             <Image
-              source={image}
+              source={typeof image === 'string' ? { uri: image } : image}
               style={styles.image}
               resizeMode="cover"
             />
@@ -53,8 +91,12 @@ const AutoSwiper = () => {
 
 const styles = StyleSheet.create({
   container: {
-    height: 200, 
+    height: 200,
     marginBottom: 15,
+  },
+  loadingContainer: {
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   wrapper: {},
   slide: {
