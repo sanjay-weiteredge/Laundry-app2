@@ -1,5 +1,5 @@
 import React, { useState, useCallback } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, Image, ActivityIndicator, SafeAreaView } from 'react-native';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, Image, ActivityIndicator, SafeAreaView, RefreshControl } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import colors from '../component/color';
@@ -10,6 +10,12 @@ const OrdersScreen = () => {
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    fetchOrders().finally(() => setRefreshing(false));
+  }, []);
 
   const fetchOrders = async () => {
     try {
@@ -29,6 +35,21 @@ const OrdersScreen = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  // Compute total amount for an order using robust fallbacks
+  const getOrderTotal = (order) => {
+    if (!order) return 0;
+    const direct = order.totalAmount || order.total || order.total_price || order.amount;
+    if (typeof direct === 'number') return direct;
+    // Fallback: sum line totals from services array if present
+    if (Array.isArray(order.services)) {
+      return order.services.reduce((sum, s) => {
+        const lt = s?.lineTotal || s?.line_total || (s?.price && s?.quantity ? s.price * s.quantity : 0);
+        return sum + (typeof lt === 'number' ? lt : 0);
+      }, 0);
+    }
+    return 0;
   };
 
   useFocusEffect(
@@ -153,6 +174,12 @@ const OrdersScreen = () => {
               </Text>
             </View>
           )}
+
+          {/* Total Amount */}
+          <View style={styles.totalRow}>
+            <Text style={styles.totalLabel}>Total</Text>
+            <Text style={styles.totalValue}>₹{getOrderTotal(order).toFixed(2)}</Text>
+          </View>
         </View>
       </View>
     );
@@ -203,6 +230,14 @@ const OrdersScreen = () => {
         renderItem={({ item }) => <OrderItem order={item} />}
         contentContainerStyle={styles.listContent}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={[colors.primary]}
+            tintColor={colors.primary}
+          />
+        }
       />
     </SafeAreaView>
   );

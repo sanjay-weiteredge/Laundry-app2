@@ -19,8 +19,10 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImagePicker from 'expo-image-picker';
 import colors from '../component/color';
 import { getProfile, updateProfile } from '../services/userAuth';
+import { useUser } from '../context/UserContext';
 
 const EditProfile = ({ navigation }) => {
+  const { refreshUser } = useUser();
   const [profileData, setProfileData] = useState({
     name: '',
     email: '',
@@ -158,9 +160,11 @@ const EditProfile = ({ navigation }) => {
         setOriginalName(profileData.name);
         setOriginalEmail(profileData.email);
         setShowSuccessModal(true);
+        refreshUser(); // Refresh user data in the context
         setTimeout(() => {
           setShowSuccessModal(false);
-          navigation.goBack();
+          // Navigate back to Home with a parameter to force a refresh
+          navigation.navigate('Home', { refresh: true });
         }, 2000);
       } else {
         throw new Error(response.message || 'Failed to update profile');

@@ -28,7 +28,7 @@ export const verifyOTP = async (phoneNumber, otp) => {
 };
 
 
-export const getProfile = async (token) => {
+export const getProfile = async (token, options = {}) => {
   console.log('Starting getProfile with token:', token ? 'Token exists' : 'No token');
   
   try {
@@ -38,7 +38,11 @@ export const getProfile = async (token) => {
 
     console.log('Fetching authenticated user profile...');
     try {
-      const response = await axios.get(`${API}/users/profile`, {
+      const url = options.bustCache
+        ? `${API}/users/profile?_=${new Date().getTime()}`
+        : `${API}/users/profile`;
+
+      const response = await axios.get(url, {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Accept': 'application/json',
@@ -178,6 +182,48 @@ export const updateProfile = async (userId, userData, token, retryCount = 0) => 
   }
 };
 
+
+export const getUserNotifications = async (token) => {
+  try {
+    const response = await axios.get(`${API}/users/notifications`, {
+      headers: {
+        'Authorization': `Bearer ${token}`
+      }
+    });
+    return response.data;
+  } catch (error) {
+    console.error('Error in getUserNotifications:', error);
+    throw error;
+  }
+};
+
+export const markNotificationAsRead = async (token, notificationId) => {
+  try {
+    const response = await axios.put(`${API}/users/notifications/${notificationId}/read`, {}, {
+      headers: {
+        'Authorization': `Bearer ${token}`
+      }
+    });
+    return response.data;
+  } catch (error) {
+    console.error('Error in markNotificationAsRead:', error);
+    throw error;
+  }
+};
+
+export const markAllNotificationsAsRead = async (token) => {
+  try {
+    const response = await axios.put(`${API}/users/notifications/read-all`, {}, {
+      headers: {
+        'Authorization': `Bearer ${token}`
+      }
+    });
+    return response.data;
+  } catch (error) {
+    console.error('Error in markAllNotificationsAsRead:', error);
+    throw error;
+  }
+};
 
 function isNetworkError(error) {
   return (

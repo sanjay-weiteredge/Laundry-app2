@@ -3,15 +3,13 @@ import {
   View,
   Text,
   StyleSheet,
-  Image,
+  ImageBackground,
   StatusBar,
   ActivityIndicator,
   Animated,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { LinearGradient } from 'expo-linear-gradient';
 import * as Location from 'expo-location';
-import colors from '../component/color';
 import images from '../component/image';
 import { getProfile } from '../services/userAuth';
 import { Ionicons } from '@expo/vector-icons';
@@ -180,10 +178,7 @@ const SplashScreen = ({ navigation }) => {
   }, []);
 
   return (
-    <LinearGradient
-      colors={['#F9B4B4', colors.primary]}
-      style={styles.container}
-    >
+    <ImageBackground source={images.splashIcon} style={styles.container} resizeMode="cover">
       <StatusBar barStyle="light-content" translucent />
 
       {/* Logo Animation */}
@@ -196,7 +191,7 @@ const SplashScreen = ({ navigation }) => {
           },
         ]}
       >
-        <Image source={images.splashIcon} style={styles.icon} resizeMode="contain" />
+        {/* background already shows full image */}
       </Animated.View>
 
       {/* Address with Pulse + Slide Animation */}
@@ -225,7 +220,7 @@ const SplashScreen = ({ navigation }) => {
       </Animated.View>
 
       <Text style={styles.text}>Your Local Services, Just a Tap Away!</Text>
-    </LinearGradient>
+    </ImageBackground>
   );
 };
 
