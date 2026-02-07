@@ -657,7 +657,7 @@ const SelectTimeSlot = ({ navigation, route }) => {
               style={styles.closeButton}
               onPress={() => {
                 hideSuccessModal();
-                navigation.navigate('Home', { bookingCompleted: true });
+                navigation.replace('Myorder', { bookingCompleted: true });
               }}
             >
               <Text style={styles.closeButtonText}>Done</Text>

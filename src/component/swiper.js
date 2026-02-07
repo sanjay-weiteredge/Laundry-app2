@@ -12,7 +12,7 @@ const fallbackImages = [
   require('../assests/poster/4.jpg'),
 ];
 
-const AutoSwiper = () => {
+const AutoSwiper = ({ refreshKey }) => {
   const swiperRef = useRef(null);
   const [images, setImages] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -31,6 +31,7 @@ const AutoSwiper = () => {
     let isMounted = true;
     const fetchPosters = async () => {
       try {
+        setLoading(true);
         const posters = await getActivePosters();
         const urls = posters.map(p => p.image_url).filter(Boolean);
         if (isMounted) {
@@ -52,7 +53,7 @@ const AutoSwiper = () => {
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [refreshKey]);
 
   if (loading) {
     return (

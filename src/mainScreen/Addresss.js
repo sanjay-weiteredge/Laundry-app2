@@ -63,6 +63,7 @@ const Addresss = ({ navigation }) => {
     try {
       setLoadingAddresses(true);
       const addresses = await fetchAddresses();
+      // console.log('Addresses:', addresses);
       if (Array.isArray(addresses)) {
         setSavedAddresses(addresses);
       } else {

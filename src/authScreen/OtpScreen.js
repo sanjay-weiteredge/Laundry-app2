@@ -16,6 +16,8 @@ import { LinearGradient } from 'expo-linear-gradient';
 import colors from '../component/color';
 import { verifyOTP, getProfile } from '../services/userAuth';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Notifications from 'expo-notifications';
+import { updateDeviceToken, sendNotification } from '../services/notificationService';
 
 const OtpScreen = ({ route, navigation }) => {
   const [otp, setOtp] = useState(['', '', '', '']);
@@ -61,7 +63,23 @@ const OtpScreen = ({ route, navigation }) => {
      
       const response = await verifyOTP(phoneNumber, otpCode);
       
-      if (response.success) {
+      if (response.success && response.token) {
+        const token = response.token;
+        await AsyncStorage.setItem('userToken', token);
+
+        try {
+          const deviceToken = (await Notifications.getDevicePushTokenAsync()).data;
+          await updateDeviceToken(token, deviceToken);
+          const message = {
+            title: "Login Successful",
+            body: "You have successfully logged in.",
+            subtitle: "Welcome back!"
+          };
+          await sendNotification(token, deviceToken, message);
+        } catch (e) {
+          console.log("Push notification setup failed", e);
+        }
+
         
         // Save the token to AsyncStorage
         if (response.token) {
@@ -318,5 +336,3 @@ const styles = StyleSheet.create({
 });
 
 export default OtpScreen;
-
-

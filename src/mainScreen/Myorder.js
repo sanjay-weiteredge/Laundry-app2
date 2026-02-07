@@ -19,8 +19,12 @@ import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getUserOrders, cancelOrder, rescheduleOrder } from '../services/orders';
 import colors from '../component/color';
-
+import AntDesign from '@expo/vector-icons/AntDesign';
 const { width } = Dimensions.get('window');
+import * as FileSystem from 'expo-file-system';
+import * as Sharing from 'expo-sharing';
+import * as Print from 'expo-print';
+import Invoice from '../component/invoice';
 
 const Myorder = ({ navigation }) => {
   const [orders, setOrders] = useState([]);
@@ -34,7 +38,7 @@ const Myorder = ({ navigation }) => {
   const [refreshing, setRefreshing] = useState(false);
   const modalAnimValue = React.useRef(new Animated.Value(0)).current;
   const cancelSuccessAnimValue = React.useRef(new Animated.Value(0)).current;
-
+ const [selectedOrderForInvoice, setSelectedOrderForInvoice] = useState(null);
   useFocusEffect(
     React.useCallback(() => {
       fetchOrders();
@@ -44,12 +48,12 @@ const Myorder = ({ navigation }) => {
   const fetchOrders = async (isRefreshing = false) => {
     const startTime = Date.now();
     const MIN_LOADING_TIME = 1000; // Minimum loading time in milliseconds (1 second)
-    
+
     try {
       if (!isRefreshing) {
         setLoading(true);
       }
-      
+
       // Use Promise.race to add a timeout to the API call
       const token = await AsyncStorage.getItem('userToken');
       if (!token) {
@@ -57,7 +61,7 @@ const Myorder = ({ navigation }) => {
       }
 
       // Create a timeout promise to ensure we don't wait too long
-      const timeoutPromise = new Promise((_, reject) => 
+      const timeoutPromise = new Promise((_, reject) =>
         setTimeout(() => reject(new Error('Request timeout')), 5000) // 5 second timeout
       );
 
@@ -83,11 +87,11 @@ const Myorder = ({ navigation }) => {
       // Calculate remaining time to show loading if needed
       const elapsed = Date.now() - startTime;
       const remainingTime = Math.max(0, MIN_LOADING_TIME - elapsed);
-      
+
       if (remainingTime > 0) {
         await new Promise(resolve => setTimeout(resolve, remainingTime));
       }
-      
+
       setOrders(processedOrders);
     } catch (err) {
       console.error('Fetch orders error:', err);
@@ -122,7 +126,7 @@ const Myorder = ({ navigation }) => {
     if (!startTime || !endTime) return 'N/A';
     const start = new Date(startTime);
     const end = new Date(endTime);
-    
+
     const formatDate = (date) => {
       return date.toLocaleDateString('en-IN', {
         day: 'numeric',
@@ -130,19 +134,19 @@ const Myorder = ({ navigation }) => {
         year: 'numeric'
       });
     };
-    
+
     const formatTime = (date) => {
       return date.toLocaleTimeString('en-IN', {
         hour: '2-digit',
         minute: '2-digit'
       });
     };
-    
+
     // If same day, show date only once
     if (formatDate(start) === formatDate(end)) {
       return `${formatDate(start)}, ${formatTime(start)} - ${formatTime(end)}`;
     }
-    
+
     return `${formatDate(start)} ${formatTime(start)} - ${formatDate(end)} ${formatTime(end)}`;
   };
 
@@ -165,7 +169,7 @@ const Myorder = ({ navigation }) => {
     setSelectedOrder(order);
     setActionType(type);
     setShowActionModal(true);
-    
+
     Animated.timing(modalAnimValue, {
       toValue: 1,
       duration: 300,
@@ -205,25 +209,25 @@ const Myorder = ({ navigation }) => {
   };
 
   const handleCancelOrder = async () => {
-  try {
-    const token = await AsyncStorage.getItem('userToken');
-    if (!token) {
-      throw new Error('Please log in again');
-    }
+    try {
+      const token = await AsyncStorage.getItem('userToken');
+      if (!token) {
+        throw new Error('Please log in again');
+      }
 
-    await cancelOrder(selectedOrder.orderId, token);
-    hideActionModal();
-    showCancelSuccessModalFn();
-    fetchOrders(); // Refresh orders
-  } catch (error) {
-    console.error('Cancel order error:', error);
-    Alert.alert('Error', error.message || 'Failed to cancel order');
-  }
-};
+      await cancelOrder(selectedOrder.orderId, token);
+      hideActionModal();
+      showCancelSuccessModalFn();
+      fetchOrders(); // Refresh orders
+    } catch (error) {
+      console.error('Cancel order error:', error);
+      Alert.alert('Error', error.message || 'Failed to cancel order');
+    }
+  };
 
   const handleRescheduleOrder = () => {
     hideActionModal();
-    
+
     if (!selectedOrder) {
       Alert.alert('Error', 'No order selected for rescheduling');
       return;
@@ -239,22 +243,22 @@ const Myorder = ({ navigation }) => {
       },
       onRescheduleComplete: (updatedOrder) => {
         // Update the local state with the rescheduled order
-        setOrders(prevOrders => 
-          prevOrders.map(order => 
-            order.orderId === updatedOrder.orderId 
-              ? { 
-                  ...order, 
-                  pickupSlot: {
-                    ...order.pickupSlot,
-                    start: updatedOrder.pickupSlot.start,
-                    end: updatedOrder.pickupSlot.end
-                  },
-                  updatedAt: updatedOrder.updatedAt
-                }
+        setOrders(prevOrders =>
+          prevOrders.map(order =>
+            order.orderId === updatedOrder.orderId
+              ? {
+                ...order,
+                pickupSlot: {
+                  ...order.pickupSlot,
+                  start: updatedOrder.pickupSlot.start,
+                  end: updatedOrder.pickupSlot.end
+                },
+                updatedAt: updatedOrder.updatedAt
+              }
               : order
           )
         );
-        
+
         // Show success modal
         setRescheduleSuccess(true);
         // Auto-hide the modal after 2 seconds
@@ -267,13 +271,13 @@ const Myorder = ({ navigation }) => {
 
   const renderServices = (services) => {
     if (!services || !Array.isArray(services)) return null;
-    
+
     return (
       <View style={styles.servicesContainer}>
         {services.map((service, index) => (
           <View key={`${service.id}-${index}`} style={styles.serviceItem}>
             <Text style={styles.serviceName}>
-              {service.name} 
+              {service.name}
             </Text>
             <Text style={styles.serviceDescription} numberOfLines={1}>
               {service.description}
@@ -285,13 +289,13 @@ const Myorder = ({ navigation }) => {
   };
 
   const OrderItem = ({ order }) => {
-    
+
     const totalPrice = order.services?.reduce((sum, service) => {
       return sum + (service.lineTotal || 0);
     }, 0) || 0;
-    
-  
-    
+
+
+
     return (
       <View style={styles.orderCard}>
         <View style={styles.orderHeader}>
@@ -299,17 +303,20 @@ const Myorder = ({ navigation }) => {
             <Text style={styles.orderNumber}>Order #{order.orderId}</Text>
             <Text style={styles.orderDate}>{formatDate(order.createdAt)}</Text>
           </View>
-          <View style={[styles.statusBadge, { backgroundColor: getStatusColor(order.status) }]} >
-            <Text style={styles.statusText}>{order.status?.charAt(0)?.toUpperCase() + order.status?.slice(1)}</Text>
+          <View style={styles.actionContainer}>
+            <View style={[styles.statusBadge, { backgroundColor: getStatusColor(order.status) }]} >
+              <Text style={styles.statusText}>{order.status?.charAt(0)?.toUpperCase() + order.status?.slice(1)}</Text>
+            </View>
+
           </View>
         </View>
-        
+
         <View style={styles.orderContent}>
           <View style={styles.serviceInfo}>
             {renderServices(order.services)}
             <Text style={styles.storeName}>{order.storeName}</Text>
           </View>
-          
+
           {order.pickupSlot && (
             <View style={styles.scheduleInfo}>
               <Ionicons name="time-outline" size={14} color={colors.primaryText} />
@@ -318,18 +325,24 @@ const Myorder = ({ navigation }) => {
               </Text>
             </View>
           )}
-          
+
           <View style={styles.priceContainer}>
             <Text style={styles.priceText}>Total: ₹{totalPrice.toFixed(2)}</Text>
           </View>
-          
+
           {order.status?.toLowerCase() === 'delivered' ? (
             <View style={styles.completedContainer}>
               <View style={styles.completedBadge}>
                 <Ionicons name="checkmark-circle" size={20} color="#4CAF50" />
-                <Text style={styles.completedText}>Order Completed</Text>
+                <Text style={styles.completedText}>Order Delivered</Text>
               </View>
-              <Text style={styles.deliveredText}>Delivered</Text>
+              <TouchableOpacity
+                style={styles.invoiceButton}
+                onPress={() => setSelectedOrderForInvoice(order)}
+              >
+                <Text style={styles.invoiceText}>Invoice</Text>
+                <AntDesign name="cloud-download" size={19} color="black" />
+              </TouchableOpacity>
             </View>
           ) : order.status?.toLowerCase() !== 'cancelled' && order.status?.toLowerCase() !== 'completed' ? (
             <View style={styles.actionButtons}>
@@ -340,7 +353,7 @@ const Myorder = ({ navigation }) => {
                 <Ionicons name="close-circle-outline" size={16} color="#F44336" />
                 <Text style={styles.cancelButtonText}>Cancel</Text>
               </TouchableOpacity>
-              
+
               <TouchableOpacity
                 style={[styles.actionButton, styles.rescheduleButton]}
                 onPress={() => showActionModalAnimated(order, 'reschedule')}
@@ -364,7 +377,7 @@ const Myorder = ({ navigation }) => {
         onRequestClose={hideCancelSuccessModal}
       >
         <View style={styles.modalOverlay}>
-          <Animated.View 
+          <Animated.View
             style={[
               styles.successModalContainer,
               {
@@ -388,8 +401,8 @@ const Myorder = ({ navigation }) => {
               <Text style={styles.successMessage}>
                 Your order #{selectedOrder?.orderId} has been successfully cancelled.
               </Text>
-              
-              <TouchableOpacity 
+
+              <TouchableOpacity
                 style={styles.successButton}
                 onPress={hideCancelSuccessModal}
               >
@@ -413,7 +426,7 @@ const Myorder = ({ navigation }) => {
         onRequestClose={hideActionModal}
       >
         <View style={styles.modalOverlay}>
-          <Animated.View 
+          <Animated.View
             style={[
               styles.actionModalContainer,
               {
@@ -431,7 +444,7 @@ const Myorder = ({ navigation }) => {
                 <Ionicons name="close" size={24} color={colors.primaryText} />
               </TouchableOpacity>
             </View>
-            
+
             <View style={styles.modalContent}>
               <View style={styles.orderSummary}>
                 <Text style={styles.summaryLabel}>Order #{selectedOrder.orderId}</Text>
@@ -443,15 +456,15 @@ const Myorder = ({ navigation }) => {
                   </Text>
                 )}
               </View>
-              
+
               <Text style={styles.confirmationText}>
-                {actionType === 'cancel' 
+                {actionType === 'cancel'
                   ? 'Are you sure you want to cancel this order? This action cannot be undone.'
                   : 'You will be redirected to select a new time slot for this order.'
                 }
               </Text>
             </View>
-            
+
             <View style={styles.modalActions}>
               <TouchableOpacity
                 style={[styles.modalButton, styles.modalCancelButton]}
@@ -459,10 +472,10 @@ const Myorder = ({ navigation }) => {
               >
                 <Text style={styles.modalCancelText}>Back</Text>
               </TouchableOpacity>
-              
+
               <TouchableOpacity
                 style={[
-                  styles.modalButton, 
+                  styles.modalButton,
                   actionType === 'cancel' ? styles.modalConfirmCancel : styles.modalConfirmReschedule
                 ]}
                 onPress={actionType === 'cancel' ? handleCancelOrder : handleRescheduleOrder}
@@ -509,7 +522,7 @@ const Myorder = ({ navigation }) => {
 
 
 
-  // Success Modal Component
+
   const SuccessModal = () => (
     <Modal
       transparent={true}
@@ -533,13 +546,25 @@ const Myorder = ({ navigation }) => {
       <SuccessModal />
       <SafeAreaView style={styles.container}>
 
-        
+       <Modal
+        visible={!!selectedOrderForInvoice}
+        transparent={false}
+        animationType="slide"
+        onRequestClose={() => setSelectedOrderForInvoice(null)}
+      >
+        <View style={styles.fullScreenContainer}>
+          <Invoice
+            order={selectedOrderForInvoice}
+            onClose={() => setSelectedOrderForInvoice(null)}
+          />
+        </View>
+      </Modal>
         {orders.length === 0 ? (
           <View style={styles.emptyContainer}>
             <Ionicons name="receipt-outline" size={64} color={colors.secondaryText} />
             <Text style={styles.emptyTitle}>No Orders Yet</Text>
             <Text style={styles.emptyMessage}>You haven't placed any orders yet.</Text>
-            <TouchableOpacity 
+            <TouchableOpacity
               style={styles.browseButton}
               onPress={() => navigation.navigate('Home', { params: { hidePromo: true } })}
             >
@@ -578,9 +603,14 @@ const Myorder = ({ navigation }) => {
 
 const styles = StyleSheet.create({
   container: {
-    height:"95%",
+    height: "95%",
     backgroundColor: '#fff',
-    paddingBottom:20
+    paddingBottom: 20
+  },
+  fullScreenContainer: {
+    flex: 1,
+    width: '100%',
+    backgroundColor: '#fff',
   },
   header: {
     flexDirection: 'row',
@@ -607,6 +637,7 @@ const styles = StyleSheet.create({
     marginTop: 10,
     fontSize: 16,
     color: colors.primaryText,
+    marginBottom: 8,
   },
   errorContainer: {
     flex: 1,
@@ -673,20 +704,36 @@ const styles = StyleSheet.create({
   },
   orderCard: {
     backgroundColor: '#fff',
-    borderRadius: 10,
-    padding: 15,
-    marginBottom: 15,
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#f0f0f0',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
   },
   servicesContainer: {
-    marginBottom: 10,
+    marginBottom: 12,
   },
   serviceItem: {
-    marginBottom: 8,
+    marginBottom: 12,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f5f5f5',
+  },
+  serviceHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  servicePrice: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#1A1A1A',
   },
   serviceName: {
     fontSize: 16,
@@ -694,8 +741,8 @@ const styles = StyleSheet.create({
     color: '#333',
   },
   serviceDescription: {
-    fontSize: 12,
-    color: '#666',
+    fontSize: 13,
+    color: '#757575',
     marginTop: 2,
   },
   orderHeader: {
@@ -704,25 +751,35 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     marginBottom: 12,
   },
+  orderInfo: {
+    flex: 1,
+    marginRight: 12,
+  },
   orderNumber: {
     fontSize: 16,
-    fontWeight: '600',
-    color: colors.primaryText,
+    fontWeight: '700',
+    color: '#1A1A1A',
+    marginBottom: 2,
   },
   orderDate: {
-    fontSize: 14,
-    color: colors.secondaryText,
+    fontSize: 13,
+    color: '#757575',
     marginTop: 2,
   },
   statusBadge: {
-    paddingHorizontal: 8,
+    paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 12,
+    minWidth: 90,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   statusText: {
     fontSize: 12,
     fontWeight: '600',
     color: '#fff',
+    textAlign: 'center',
+    textTransform: 'capitalize',
   },
   orderContent: {
     marginBottom: 12,
@@ -731,18 +788,44 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   serviceName: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '600',
-    color: colors.primaryText,
-    marginBottom: 4,
+    color: '#333',
+    flex: 1,
+    marginRight: 8,
   },
-  storeName: {
-    fontSize: 14,
-    color: colors.secondaryText,
-  },
-  scheduleInfo: {
+  storeContainer: {
     flexDirection: 'row',
     alignItems: 'center',
+    marginTop: 8,
+  },
+  storeName: {
+    fontSize: 13,
+    color: '#616161',
+    marginLeft: 6,
+    flex: 1,
+  },
+  orderMeta: {
+    marginTop: 12,
+  },
+  metaItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  metaText: {
+    fontSize: 13,
+    color: '#616161',
+    marginLeft: 8,
+  },
+  metaValue: {
+    color: '#1A1A1A',
+    fontWeight: '500',
+  },
+  divider: {
+    height: 1,
+    backgroundColor: '#f0f0f0',
+    marginVertical: 12,
   },
   scheduleText: {
     fontSize: 14,
@@ -752,28 +835,39 @@ const styles = StyleSheet.create({
   actionButtons: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginTop: 12,
+    marginTop: 16,
+    paddingTop: 12,
     borderTopWidth: 1,
     borderTopColor: '#f0f0f0',
-    paddingTop: 12,
   },
   actionButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 8,
+    paddingVertical: 10,
     paddingHorizontal: 16,
     borderRadius: 8,
     flex: 1,
     marginHorizontal: 4,
+    borderWidth: 1,
+    backgroundColor: '#fff',
   },
   cancelButton: {
-    backgroundColor: '#FFEBEE',
-    borderWidth: 1,
+    backgroundColor: '#fff',
     borderColor: '#F44336',
   },
   cancelButtonText: {
     color: '#F44336',
+    fontSize: 14,
+    fontWeight: '600',
+    marginLeft: 6,
+  },
+  rescheduleButton: {
+    backgroundColor: '#fff',
+    borderColor: '#2196F3',
+  },
+  rescheduleButtonText: {
+    color: '#2196F3',
     fontSize: 14,
     fontWeight: '600',
     marginLeft: 6,
@@ -987,6 +1081,12 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 5,
   },
+  invoiceText: {
+
+    padding: 4,
+    borderRadius: 15,
+
+  },
   successText: {
     color: '#333',
     fontSize: 16,
@@ -1017,6 +1117,38 @@ const styles = StyleSheet.create({
     marginTop: 15,
     textAlign: 'center',
   },
+  actionContainer: {
+    flexDirection: 'column',
+    gap: 10,
+    alignItems: 'center',
+    width: '100%',
+    paddingHorizontal: 20,
+
+  },
+  invoiceContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: "lightgrey",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 20,
+  },
+  invoiceButton: {
+  flexDirection: 'row',
+  alignItems: 'center',
+  justifyContent: 'center',
+  padding: 8,
+  borderRadius: 6,
+  backgroundColor: '#f5f5f5',
+  marginLeft: 10,
+},
+invoiceText: {
+  marginRight: 5,
+  color: '#333',
+  fontSize: 14,
+  fontWeight: '500',
+},
 });
 
 export default Myorder;

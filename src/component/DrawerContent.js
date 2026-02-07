@@ -279,6 +279,14 @@ const DrawerContent = ({ navigation }) => {
         navigation.navigate('MainTabs', { screen: 'Home', params: { screen: 'Address' } });
       },
     },
+     {
+      icon: 'storefront-outline',
+      label: 'Near By Store',
+      onPress: () => {
+        navigation.closeDrawer();
+        navigation.navigate('MainTabs', { screen: 'Home', params: { screen: 'NearByStore' } });
+      },
+    },
     {
       icon: 'document-text-outline',
       label: 'Privacy Policy',

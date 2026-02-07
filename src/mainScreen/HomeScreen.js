@@ -14,6 +14,7 @@ import {
   Linking,
   FlatList,
   RefreshControl,
+  Dimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -62,11 +63,13 @@ const ServiceGridCard = ({ service, isSelected, onSelect }) => {
           </View>
         </TouchableOpacity>
       )}
-      <View style={styles.gridIconWrap}>
-        <Image source={imageSource} style={styles.gridIcon} resizeMode="contain" />
+      <View style={styles.gridCardContent}>
+        <View style={styles.gridIconWrap}>
+          <Image source={imageSource} style={styles.gridIcon} resizeMode="contain" />
+        </View>
+        <Text style={styles.gridTitle} numberOfLines={2} ellipsizeMode="tail">{title}</Text>
       </View>
-      <Text style={styles.gridTitle} numberOfLines={1}>{title}</Text>
-      <Text style={styles.gridSubtitle} numberOfLines={1}>{description}</Text>
+      {/* <Text style={styles.gridSubtitle} numberOfLines={1}>{description}</Text> */}
     </TouchableOpacity>
   );
 };
@@ -98,6 +101,11 @@ const HomeScreen = ({ navigation, route }) => {
   const [showPromoCard, setShowPromoCard] = useState(true);
   const [selectedServices, setSelectedServices] = useState({});
   const [refreshing, setRefreshing] = useState(false);
+  const [swiperRefreshKey, setSwiperRefreshKey] = useState(0);
+
+  // Calculate item width to show 3 items at a time
+  const screenWidth = Dimensions.get('window').width;
+  const itemWidth = (screenWidth - 60) / 3; // 60 = 20 padding on each side + 20 gap between items
 
   const toggleServiceSelection = (service) => {
     setSelectedServices(prev => {
@@ -272,6 +280,7 @@ const HomeScreen = ({ navigation, route }) => {
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
+    setSwiperRefreshKey(prev => prev + 1);
     Promise.all([
       fetchUserProfile(),
       fetchServices(),
@@ -396,117 +405,7 @@ const HomeScreen = ({ navigation, route }) => {
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      {/* <View style={styles.header}>
-        <View style={styles.avatarContainer}>
-          <Image 
-            source={userData.image ? { uri: userData.image } : images.profileImage} 
-            style={styles.avatar} 
-          />
-        </View>
-        <TouchableOpacity
-          style={styles.headerInfo}
-          activeOpacity={0.85}
-          onPress={() => {
-            if (savedAddresses.length === 0) {
-              Alert.alert('No saved addresses', 'Please add an address first.');
-              navigation.navigate('Profile', { screen: 'Address' });
-            } else {
-              setLocationModalVisible(true);
-            }
-          }}
-        >
-          <Text style={styles.headerName} numberOfLines={1}>
-            {userData.name || 'User'}
-          </Text>
-          <View style={styles.headerAddressRow}>
-            {detectingLocation ? (
-              <ActivityIndicator size="small" color={colors.primaryText} style={styles.headerAddressLoader} />
-            ) : (
-              <Text style={styles.headerAddressText} numberOfLines={1}>
-                {headerAddressLine}
-              </Text>
-            )}
-          </View>
-        </TouchableOpacity>
-        <View style={styles.actionsRight}>
-          <TouchableOpacity
-            onPress={async () => {
-              const phoneUrl = 'tel:+919999999999';
-              try {
-                const supported = await Linking.canOpenURL(phoneUrl);
-                if (supported) {
-                  await Linking.openURL(phoneUrl);
-                } else {
-                  Alert.alert('Phone', 'Calling is not supported on this device');
-                }
-              } catch (e) {
-                Alert.alert('Phone', 'Unable to initiate call');
-              }
-            }}
-            style={styles.actionButton}
-            activeOpacity={0.7}
-          >
-            <Ionicons name="call" size={22} color={colors.primary} />
-          </TouchableOpacity>
-          <TouchableOpacity
-            onPress={() => navigation.navigate('Notification')}
-            style={styles.actionButton}
-            activeOpacity={0.7}
-          >
-            <Ionicons name="notifications-outline" size={22} color={colors.primary} />
-          </TouchableOpacity>
-        </View>
-      </View> */}
-      <FlatList
-        data={services}
-        keyExtractor={(item) => String(item.id)}
-        renderItem={({ item }) => (
-          <ServiceGridCard
-            service={item}
-            isSelected={!!selectedServices[item.id]}
-            onSelect={() => handleServiceSelect(item)}
-          />
-        )}
-        numColumns={2}
-        columnWrapperStyle={styles.gridRow}
-        contentContainerStyle={styles.gridContainerFlat}
-        ListHeaderComponent={(
-          <View style={styles.listHeaderWrap}>
-            {showPromoCard && (
-              <View style={styles.fullBleed}>
-                <AutoSwiper />
-              </View>
-            )}
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>Select Services</Text>
-              <TouchableOpacity activeOpacity={0.7} onPress={handleSeeAllPress}>
-                <Text style={styles.sectionAction}>{showPromoCard ? 'Hide Promo' : 'Show Promo'}</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        )}
-        ListEmptyComponent={(
-          <View style={styles.loadingContainer}>
-            <Text style={styles.loadingText}>
-              {loadingServices ? 'Loading services...' : 'No services available'}
-            </Text>
-          </View>
-        )}
-        ListFooterComponent={(
-          Object.keys(selectedServices).length > 0 ? (
-            <View style={styles.continueButtonContainer}>
-              <TouchableOpacity 
-                style={styles.continueButton}
-                onPress={handleContinue}
-                activeOpacity={0.8}
-              >
-                <Text style={styles.continueButtonText}>
-                  {`continue with ${Object.keys(selectedServices).length} ${Object.keys(selectedServices).length === 1 ? 'service' : 'services'}`}
-                </Text>
-              </TouchableOpacity>
-            </View>
-          ) : null
-        )}
+      <ScrollView
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl
@@ -516,7 +415,71 @@ const HomeScreen = ({ navigation, route }) => {
             tintColor={colors.primary}
           />
         }
-      />
+      >
+        <View style={styles.listHeaderWrap}>
+          {showPromoCard && (
+            <View style={styles.fullBleed}>
+              <AutoSwiper refreshKey={swiperRefreshKey} />
+            </View>
+          )}
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Select Services</Text>
+            <TouchableOpacity activeOpacity={0.7} onPress={handleSeeAllPress}>
+              <Text style={styles.sectionAction}>{showPromoCard ? 'Hide Promo' : 'Show Promo'}</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        {loadingServices ? (
+          <View style={styles.loadingContainer}>
+            <Text style={styles.loadingText}>Loading services...</Text>
+          </View>
+        ) : services.length === 0 ? (
+          <View style={styles.loadingContainer}>
+            <Text style={styles.loadingText}>No services available</Text>
+          </View>
+        ) : (
+          <FlatList
+            data={services}
+            keyExtractor={(item) => String(item.id)}
+            renderItem={({ item }) => (
+              <View style={[styles.horizontalCardWrapper, { width: itemWidth }]}>
+                <ServiceGridCard
+                  service={item}
+                  isSelected={!!selectedServices[item.id]}
+                  onSelect={() => handleServiceSelect(item)}
+                />
+              </View>
+            )}
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.horizontalListContainer}
+            snapToInterval={itemWidth + 10}
+            decelerationRate="fast"
+            getItemLayout={(data, index) => ({
+              length: itemWidth + 10,
+              offset: (itemWidth + 10) * index,
+              index,
+            })}
+          />
+        )}
+
+        <View style={styles.continueButtonContainer}>
+          <TouchableOpacity 
+            style={[
+              styles.continueButton,
+              Object.keys(selectedServices).length === 0 && styles.disabledButton
+            ]}
+            onPress={handleContinue}
+            activeOpacity={0.8}
+            disabled={Object.keys(selectedServices).length === 0}
+          >
+            <Text style={styles.continueButtonText}>
+              Schedule Pickup
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </ScrollView>
 
       {renderAddressModal()}
     </SafeAreaView>
@@ -597,18 +560,32 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   gridCard: {
-    flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: 'transparent',
     borderRadius: 12,
     padding: 14,
     borderWidth: 1,
-    borderColor: '#f0f0f0',
-    marginRight: 12,
-    gap: 8,
+    borderColor: colors.primary,
+    height: 140,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  gridCardContent: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    flex: 1,
+    width: '100%',
+  },
+  horizontalCardWrapper: {
+    marginRight: 10,
+  },
+  horizontalListContainer: {
+    paddingHorizontal: 20,
+    paddingVertical: 12,
   },
   gridCardSelected: {
     borderColor: colors.primary,
-    backgroundColor: '#fff8f5',
+    backgroundColor: 'transparent',
   },
   selectBadge: {
     position: 'absolute',
@@ -635,11 +612,11 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 6,
   },
   gridIcon: {
     width: 55,
     height: 55,
+    alignSelf:"center"
   },
   gridTick: {
     position: 'absolute',
@@ -665,6 +642,7 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '700',
     color: colors.primaryText,
+    textAlign: 'center',
   },
   gridSubtitle: {
     fontSize: 12,
@@ -690,6 +668,10 @@ const styles = StyleSheet.create({
       color: '#fff',
       fontSize: 18,
       fontWeight: '600',
+    },
+    disabledButton: {
+      backgroundColor: '#cccccc',
+      opacity: 0.7,
     },
   header: {
     flexDirection: 'row',

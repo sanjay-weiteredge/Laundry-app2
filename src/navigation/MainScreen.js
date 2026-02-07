@@ -22,6 +22,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import PackagesScreen from '../mainScreen/PackagesScreen';
 import NotificationScreen from '../mainScreen/NotificationScreen';
 import ServicePriceList from '../mainScreen/ServicePriceList';
+import NearByStore from '../mainScreen/NearByStore';
 const Tab = createBottomTabNavigator();
 const HomeStackNavigator = createStackNavigator();
 const Drawer = createDrawerNavigator();
@@ -119,6 +120,15 @@ const HomeStack = ({ navigation }) => (
       component={PrivacyPolicy}
       options={{
         title: 'Privacy Policy',
+        headerTitleAlign: 'center',
+      }}
+    />
+
+    <HomeStackNavigator.Screen
+      name="NearByStore"
+      component={NearByStore}
+      options={{
+        title: 'Near By Store',
         headerTitleAlign: 'center',
       }}
     />

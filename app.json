@@ -19,15 +19,27 @@
         "foregroundImage": "./assets/icon.png",
         "backgroundColor": "#ffffff"
       },
+      "googleServicesFile": "./google-services.json",
       "edgeToEdgeEnabled": true,
       "package": "com.bgwehgowcvgcg.Lundary"
     },
+    "plugins": [
+      "expo-notifications",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "usesCleartextTraffic": true
+          }
+        }
+      ]
+    ],
     "web": {
       "favicon": "./assets/favicon.png"
     },
     "extra": {
       "eas": {
-        "projectId": "ccca3b3a-3e69-49fe-a61a-c2a288793c20"
+        "projectId": "743026ff-bf20-419e-ac8b-b5a5a5e71ed6"
       }
     }
   }
