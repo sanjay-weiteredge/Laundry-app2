@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "Lundary",
-    "slug": "Lundary",
+    "name": "TheLaundryGuyz",
+    "slug": "TheLaundryGuyz",
     "version": "1.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
@@ -16,12 +16,12 @@
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/icon.png",
+        "foregroundImage": "./assets/ic_launcher-web.png",
         "backgroundColor": "#ffffff"
       },
       "googleServicesFile": "./google-services.json",
       "edgeToEdgeEnabled": true,
-      "package": "com.bgwehgowcvgcg.Lundary"
+      "package": "com.bgwehgowcvgcg.TheLaundryGuyz"
     },
     "plugins": [
       "expo-notifications",
@@ -39,7 +39,7 @@
     },
     "extra": {
       "eas": {
-        "projectId": "743026ff-bf20-419e-ac8b-b5a5a5e71ed6"
+        "projectId": "c5c1654c-93d2-4364-beef-77e88bcdf78e"
       }
     }
   }

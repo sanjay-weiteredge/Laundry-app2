@@ -23,6 +23,7 @@ import PackagesScreen from '../mainScreen/PackagesScreen';
 import NotificationScreen from '../mainScreen/NotificationScreen';
 import ServicePriceList from '../mainScreen/ServicePriceList';
 import NearByStore from '../mainScreen/NearByStore';
+import ViewPricing from '../mainScreen/ViewPricing';
 const Tab = createBottomTabNavigator();
 const HomeStackNavigator = createStackNavigator();
 const Drawer = createDrawerNavigator();
@@ -33,8 +34,8 @@ const renderGradientHeader = ({ route, options, navigation, back }) => {
     options.headerTitle !== undefined
       ? options.headerTitle
       : options.title !== undefined
-      ? options.title
-      : route.name;
+        ? options.title
+        : route.name;
 
   return (
     <LinearGradient
@@ -148,6 +149,14 @@ const HomeStack = ({ navigation }) => (
         headerTitleAlign: 'center',
       }}
     />
+    <HomeStackNavigator.Screen
+      name="ViewPricing"
+      component={ViewPricing}
+      options={{
+        title: 'Pricing',
+        headerTitleAlign: 'center',
+      }}
+    />
   </HomeStackNavigator.Navigator>
 );
 
@@ -157,98 +166,98 @@ const CustomTabBar = ({ state, descriptors, navigation }) => {
     <View style={styles.tabBarContainer}>
       {state.routes
         .map((route, index) => {
-        const { options } = descriptors[route.key];
-        const label = options.tabBarLabel !== undefined
-          ? options.tabBarLabel
-          : options.title !== undefined
-          ? options.title
-          : route.name;
+          const { options } = descriptors[route.key];
+          const label = options.tabBarLabel !== undefined
+            ? options.tabBarLabel
+            : options.title !== undefined
+              ? options.title
+              : route.name;
 
-        const isFocused = state.index === index;
+          const isFocused = state.index === index;
 
-        const onPress = () => {
-          if (route.name === 'Whatsapp') {
-            const openWhatsApp = async () => {
-              try {
-                // Provided number: "95503 96999"
-                const rawNumber = '95503 96999';
-                const digitsOnly = rawNumber.replace(/\D/g, '');
-                // If 10 digits (likely India), prefix +91. Otherwise assume it already includes country code.
-                const phoneWithCC = digitsOnly.length === 10 ? `+91${digitsOnly}` : `+${digitsOnly}`;
+          const onPress = () => {
+            if (route.name === 'Whatsapp') {
+              const openWhatsApp = async () => {
+                try {
+                  // Provided number: "95503 96999"
+                  const rawNumber = '95503 96999';
+                  const digitsOnly = rawNumber.replace(/\D/g, '');
+                  // If 10 digits (likely India), prefix +91. Otherwise assume it already includes country code.
+                  const phoneWithCC = digitsOnly.length === 10 ? `+91${digitsOnly}` : `+${digitsOnly}`;
 
-                const appUrl = `whatsapp://send?phone=${phoneWithCC}`;
-                const webUrl = `https://wa.me/${encodeURIComponent(phoneWithCC)}`;
+                  const appUrl = `whatsapp://send?phone=${phoneWithCC}`;
+                  const webUrl = `https://wa.me/${encodeURIComponent(phoneWithCC)}`;
 
-                const canOpen = await Linking.canOpenURL(appUrl);
-                if (canOpen) {
-                  await Linking.openURL(appUrl);
-                  return;
+                  const canOpen = await Linking.canOpenURL(appUrl);
+                  if (canOpen) {
+                    await Linking.openURL(appUrl);
+                    return;
+                  }
+                  await Linking.openURL(webUrl);
+                } catch (e) {
+                  Alert.alert('WhatsApp', 'Unable to open WhatsApp');
                 }
-                await Linking.openURL(webUrl);
-              } catch (e) {
-                Alert.alert('WhatsApp', 'Unable to open WhatsApp');
-              }
-            };
-            openWhatsApp();
-            return;
-          }
+              };
+              openWhatsApp();
+              return;
+            }
 
-          const event = navigation.emit({
-            type: 'tabPress',
-            target: route.key,
-            canPreventDefault: true,
-          });
+            const event = navigation.emit({
+              type: 'tabPress',
+              target: route.key,
+              canPreventDefault: true,
+            });
 
-          if (!isFocused && !event.defaultPrevented) {
-            navigation.navigate(route.name);
-          }
-        };
+            if (!isFocused && !event.defaultPrevented) {
+              navigation.navigate(route.name);
+            }
+          };
 
-        const onLongPress = () => {
-          navigation.emit({
-            type: 'tabLongPress',
-            target: route.key,
-          });
-        };
+          const onLongPress = () => {
+            navigation.emit({
+              type: 'tabLongPress',
+              target: route.key,
+            });
+          };
 
-        const color = isFocused ? colors.stocke : colors.secondaryText;
-        const renderIcon = () => {
-          switch (route.name) {
-            case 'Home':
-              return <Ionicons name="home-outline" size={24} color={color} />;
-            case 'Orders':
-              return <Ionicons name="bag-handle-outline" size={24} color={color} />;
-            case 'Whatsapp':
-              return <Ionicons name="logo-whatsapp" size={24} color={color} />;
-            case 'Packages':
-              return <Ionicons name="cube-outline" size={24} color={color} />;
-            default:
-              return <Feather name="circle" size={24} color={color} />;
-          }
-        };
+          const color = isFocused ? colors.stocke : colors.secondaryText;
+          const renderIcon = () => {
+            switch (route.name) {
+              case 'Home':
+                return <Ionicons name="home-outline" size={24} color={color} />;
+              case 'Orders':
+                return <Ionicons name="bag-handle-outline" size={24} color={color} />;
+              case 'Whatsapp':
+                return <Ionicons name="logo-whatsapp" size={24} color={color} />;
+              case 'Packages':
+                return <Ionicons name="cube-outline" size={24} color={color} />;
+              default:
+                return <Feather name="circle" size={24} color={color} />;
+            }
+          };
 
-        return (
-          <TouchableOpacity
-            key={route.key}
-            accessibilityRole="button"
-            accessibilityState={isFocused ? { selected: true } : {}}
-            accessibilityLabel={options.tabBarAccessibilityLabel}
-            testID={options.tabBarTestID}
-            onPress={onPress}
-            onLongPress={onLongPress}
-            style={[
-              styles.tabButton,
-              isFocused && styles.tabButtonActive,
-              index === 0 && isFocused && styles.firstTabActive,
-            ]}
-          >
-            {renderIcon()}
-            {isFocused && (
-              <Text style={styles.tabLabelActive}>{label}</Text>
-            )}
-          </TouchableOpacity>
-        );
-      })}
+          return (
+            <TouchableOpacity
+              key={route.key}
+              accessibilityRole="button"
+              accessibilityState={isFocused ? { selected: true } : {}}
+              accessibilityLabel={options.tabBarAccessibilityLabel}
+              testID={options.tabBarTestID}
+              onPress={onPress}
+              onLongPress={onLongPress}
+              style={[
+                styles.tabButton,
+                isFocused && styles.tabButtonActive,
+                index === 0 && isFocused && styles.firstTabActive,
+              ]}
+            >
+              {renderIcon()}
+              {isFocused && (
+                <Text style={styles.tabLabelActive}>{label}</Text>
+              )}
+            </TouchableOpacity>
+          );
+        })}
     </View>
   );
 };

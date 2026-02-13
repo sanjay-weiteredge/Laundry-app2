@@ -27,6 +27,9 @@ import { fetchAddresses } from '../services/address';
 import { fetchUserServices } from '../services/services';
 import { useUser } from '../context/UserContext';
 import AutoSwiper from '../component/swiper';
+import axios from 'axios';
+import * as Location from 'expo-location';
+import { API } from '../services/apiRequest';
 
 const getAddressIdentifier = (address) =>
   address?.id?.toString() ??
@@ -58,9 +61,9 @@ const ServiceGridCard = ({ service, isSelected, onSelect }) => {
     >
       {isSelected && (
         <TouchableOpacity style={styles.selectBadge} onPress={onSelect} activeOpacity={0.8}>
-          <View style={styles.gridTickCircle}>
+          {/* <View style={styles.gridTickCircle}>
             <Ionicons name="checkmark" size={10} color="#fff" />
-          </View>
+          </View> */}
         </TouchableOpacity>
       )}
       <View style={styles.gridCardContent}>
@@ -103,6 +106,11 @@ const HomeScreen = ({ navigation, route }) => {
   const [refreshing, setRefreshing] = useState(false);
   const [swiperRefreshKey, setSwiperRefreshKey] = useState(0);
 
+  // Nearby Store State
+  const [stores, setStores] = useState([]);
+  const [loadingStores, setLoadingStores] = useState(true);
+  const [storeError, setStoreError] = useState(null);
+
   // Calculate item width to show 3 items at a time
   const screenWidth = Dimensions.get('window').width;
   const itemWidth = (screenWidth - 60) / 3; // 60 = 20 padding on each side + 20 gap between items
@@ -135,9 +143,9 @@ const HomeScreen = ({ navigation, route }) => {
   const handleContinue = () => {
     const selected = Object.values(selectedServices);
     if (selected.length > 0) {
-      navigation.navigate('SelectTimeSlot', { 
-        services: selected, 
-        selectedAddress 
+      navigation.navigate('SelectTimeSlot', {
+        services: selected,
+        selectedAddress
       });
     } else {
       Alert.alert('No Services Selected', 'Please select at least one service to continue.');
@@ -147,7 +155,7 @@ const HomeScreen = ({ navigation, route }) => {
   const handleSeeAllPress = () => {
     setShowPromoCard(!showPromoCard);
   };
-  
+
   const resolvePreferredAddress = useCallback(
     (addresses) => {
       if (!Array.isArray(addresses) || addresses.length === 0) {
@@ -168,14 +176,14 @@ const HomeScreen = ({ navigation, route }) => {
     try {
       setLoading(true);
       const token = await AsyncStorage.getItem('userToken');
-      
+
       if (!token) {
         console.log('No token found, skipping profile fetch');
         return;
       }
 
       const response = await getProfile(token);
-      
+
       if (response.success && response.data) {
         setUserData(response.data);
       } else {
@@ -189,6 +197,61 @@ const HomeScreen = ({ navigation, route }) => {
     }
   }, []);
 
+  const fetchNearbyStores = useCallback(async () => {
+    try {
+      setLoadingStores(true);
+      const token = await AsyncStorage.getItem('userToken');
+      if (!token) {
+        setStoreError('Please login again');
+        return;
+      }
+
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        setStoreError('Location permission denied');
+        return;
+      }
+
+      let location = await Location.getLastKnownPositionAsync();
+      if (!location) {
+        location = await Location.getCurrentPositionAsync({});
+      }
+
+      const { latitude, longitude } = location.coords;
+
+      const res = await axios.get(`${API}/users/nearby-stores`, {
+        params: {
+          latitude,
+          longitude,
+          radius_km: 3,
+        },
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (res.data.success) {
+        setStores(res.data.data);
+      } else {
+        setStoreError(res.data.message);
+      }
+    } catch (err) {
+      setStoreError('Failed to fetch nearby stores');
+      console.log(err);
+    } finally {
+      setLoadingStores(false);
+    }
+  }, []);
+
+  const openDirections = (lat, lng) => {
+    const url = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`;
+    Linking.openURL(url);
+  };
+
+  const callStore = (phone) => {
+    Linking.openURL(`tel:${phone}`);
+  };
+
   const fetchServices = useCallback(async () => {
     try {
       setLoadingServices(true);
@@ -197,18 +260,18 @@ const HomeScreen = ({ navigation, route }) => {
       if (!token) {
         throw new Error('Please log in again');
       }
-      
+
       const servicesData = await fetchUserServices(token);
 
-      
-    
+
+
       const mappedServices = servicesData.map(service => ({
         id: service.id,
         title: service.name,
         description: service.description,
-        imageSource: service.image ? { uri: service.image } : images.service1 
+        imageSource: service.image ? { uri: service.image } : images.service1
       }));
-      
+
       setServices(mappedServices);
     } catch (error) {
       console.error('Error fetching services:', error);
@@ -225,9 +288,10 @@ const HomeScreen = ({ navigation, route }) => {
   useEffect(() => {
     fetchUserProfile();
     fetchServices();
-  }, [fetchUserProfile, fetchServices]);
+    fetchNearbyStores();
+  }, [fetchUserProfile, fetchServices, fetchNearbyStores]);
 
-  
+
   useFocusEffect(
     useCallback(() => {
       if (route.params?.refresh) {
@@ -248,6 +312,7 @@ const HomeScreen = ({ navigation, route }) => {
       fetchUserProfile();
       fetchServices();
       fetchSavedAddresses();
+      fetchNearbyStores();
 
       // Handle other params like hidePromo
       if (route.params?.hidePromo) {
@@ -262,12 +327,12 @@ const HomeScreen = ({ navigation, route }) => {
     : 'Detecting location...';
   const selectedAddressSecondary = selectedAddress
     ? [selectedAddress?.city, selectedAddress?.state, selectedAddress?.pincode || selectedAddress?.postal_code]
-        .filter(Boolean)
-        .join(' ')
+      .filter(Boolean)
+      .join(' ')
     : '';
   const headerAddressLine = [selectedAddressPrimary, selectedAddressSecondary].filter(Boolean).join(' ');
   const selectedAddressLabel = selectedAddress?.label || 'Current Location';
-  
+
   const handleSelectAddress = useCallback((address) => {
     setSelectedAddress(address);
     try {
@@ -285,30 +350,31 @@ const HomeScreen = ({ navigation, route }) => {
       fetchUserProfile(),
       fetchServices(),
       fetchSavedAddresses(),
+      fetchNearbyStores(),
     ]).finally(() => setRefreshing(false));
   }, []); // Dependencies are stable
 
   const fetchSavedAddresses = useCallback(async () => {
-      try {
-        setLoadingAddresses(true);
-        const addresses = await fetchAddresses();
-    
-        if (Array.isArray(addresses)) {
-          setSavedAddresses(addresses);
-          const preferred = resolvePreferredAddress(addresses);
-          setSelectedAddress(preferred);
-        } else {
-          setSavedAddresses([]);
-          setSelectedAddress(null);
-        }
-      } catch (error) {
-        console.error('Error fetching addresses:', error);
-        Alert.alert('Address Error', error?.message || 'Unable to load addresses. Please try again.');
-      } finally {
-        setLoadingAddresses(false);
+    try {
+      setLoadingAddresses(true);
+      const addresses = await fetchAddresses();
+
+      if (Array.isArray(addresses)) {
+        setSavedAddresses(addresses);
+        const preferred = resolvePreferredAddress(addresses);
+        setSelectedAddress(preferred);
+      } else {
+        setSavedAddresses([]);
+        setSelectedAddress(null);
       }
-    }, []);
-  
+    } catch (error) {
+      console.error('Error fetching addresses:', error);
+      Alert.alert('Address Error', error?.message || 'Unable to load addresses. Please try again.');
+    } finally {
+      setLoadingAddresses(false);
+    }
+  }, []);
+
 
   const renderAddressModal = () => (
     <Modal
@@ -465,7 +531,7 @@ const HomeScreen = ({ navigation, route }) => {
         )}
 
         <View style={styles.continueButtonContainer}>
-          <TouchableOpacity 
+          <TouchableOpacity
             style={[
               styles.continueButton,
               Object.keys(selectedServices).length === 0 && styles.disabledButton
@@ -479,6 +545,66 @@ const HomeScreen = ({ navigation, route }) => {
             </Text>
           </TouchableOpacity>
         </View>
+
+        <View style={styles.nearbyStoreSection}>
+          <Text style={styles.sectionTitle}>Nearby Stores</Text>
+          {loadingStores ? (
+            <View style={styles.center}>
+              <ActivityIndicator size="large" color={colors.primary} />
+              <Text style={styles.loadingText}>Loading nearby stores...</Text>
+            </View>
+          ) : storeError ? (
+            <View style={styles.center}>
+              <Text style={styles.error}>{storeError}</Text>
+            </View>
+          ) : stores.length === 0 ? (
+            <View style={styles.center}>
+              <Text style={styles.loadingText}>No nearby stores found</Text>
+            </View>
+          ) : (
+            stores.map((item) => (
+              <View key={item.id} style={styles.storeCard}>
+                <View style={styles.storeHeader}>
+                  <Text style={styles.storeName}>{item.name}</Text>
+                  <View
+                    style={[
+                      styles.statusBadge,
+                      { backgroundColor: item.is_active ? '#E6F7EC' : '#FFEAEA' },
+                    ]}
+                  >
+                    <Text
+                      style={{
+                        color: item.is_active ? '#1E9E5A' : '#D9534F',
+                        fontWeight: '600',
+                      }}
+                    >
+                      {item.is_active ? 'Available' : 'Closed'}
+                    </Text>
+                  </View>
+                </View>
+
+                <Text style={styles.storeAddress}>{item.address}</Text>
+
+                {item.phone ? (
+                  <TouchableOpacity onPress={() => callStore(item.phone)}>
+                    <Text style={styles.storePhone}>📞 {item.phone}</Text>
+                  </TouchableOpacity>
+                ) : null}
+
+                <Text style={styles.storeDistance}>
+                  Distance: {item.distance.toFixed(2)} km
+                </Text>
+
+                <TouchableOpacity
+                  style={styles.directionBtn}
+                  onPress={() => openDirections(item.latitude, item.longitude)}
+                >
+                  <Text style={styles.directionText}>Get Directions</Text>
+                </TouchableOpacity>
+              </View>
+            ))
+          )}
+        </View>
       </ScrollView>
 
       {renderAddressModal()}
@@ -488,11 +614,11 @@ const HomeScreen = ({ navigation, route }) => {
 
 const ServiceCard = ({ service, isSelected, onSelect }) => {
   const { title, description, imageSource } = service;
-  
+
   return (
-    <TouchableOpacity 
+    <TouchableOpacity
       style={[
-        styles.serviceCard, 
+        styles.serviceCard,
         isSelected && styles.selectedServiceCard
       ]}
       onPress={onSelect}
@@ -508,7 +634,7 @@ const ServiceCard = ({ service, isSelected, onSelect }) => {
       </View>
       <View style={styles.imageContainer}>
         <View style={[
-          styles.checkbox, 
+          styles.checkbox,
           isSelected && styles.checkboxSelected,
           styles.checkboxOverlay
         ]}>
@@ -516,10 +642,10 @@ const ServiceCard = ({ service, isSelected, onSelect }) => {
             <Ionicons name="checkmark" size={16} color="white" />
           )}
         </View>
-        <Image 
-          source={imageSource} 
-          style={styles.serviceImage} 
-          resizeMode='contain' 
+        <Image
+          source={imageSource}
+          style={styles.serviceImage}
+          resizeMode='contain'
         />
       </View>
     </TouchableOpacity>
@@ -530,7 +656,7 @@ const styles = StyleSheet.create({
   container: {
     height: '95%',
     paddingBottom: 50,
-    width: '100%',  
+    width: '100%',
     backgroundColor: colors.mainColor,
   },
   content: {
@@ -564,7 +690,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 14,
     borderWidth: 1,
-    borderColor: colors.primary,
+    borderColor: 'transparent',
     height: 140,
     justifyContent: 'center',
     alignItems: 'center',
@@ -585,7 +711,17 @@ const styles = StyleSheet.create({
   },
   gridCardSelected: {
     borderColor: colors.primary,
-    backgroundColor: 'transparent',
+    backgroundColor: '#fff',
+    borderWidth: 2,
+    transform: [{ scale: 1.05 }],
+    shadowColor: colors.primary,
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 5,
   },
   selectBadge: {
     position: 'absolute',
@@ -616,7 +752,7 @@ const styles = StyleSheet.create({
   gridIcon: {
     width: 55,
     height: 55,
-    alignSelf:"center"
+    alignSelf: "center"
   },
   gridTick: {
     position: 'absolute',
@@ -655,24 +791,24 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
   },
   continueButton: {
-      alignSelf: 'stretch',
-      borderRadius: 12,
-      overflow: 'hidden',
-      marginTop: 16,
-      height: 46,
-      backgroundColor: colors.primary,
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-    continueButtonText: {
-      color: '#fff',
-      fontSize: 18,
-      fontWeight: '600',
-    },
-    disabledButton: {
-      backgroundColor: '#cccccc',
-      opacity: 0.7,
-    },
+    alignSelf: 'stretch',
+    borderRadius: 12,
+    overflow: 'hidden',
+    marginTop: 16,
+    height: 46,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  continueButtonText: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: '600',
+  },
+  disabledButton: {
+    backgroundColor: '#cccccc',
+    opacity: 0.7,
+  },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -739,7 +875,7 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     padding: 20,
     overflow: 'hidden',
-    backgroundColor:colors.primary
+    backgroundColor: colors.primary
   },
   promoBadge: {
     alignSelf: 'flex-start',
@@ -1000,6 +1136,76 @@ const styles = StyleSheet.create({
   addAddressButtonText: {
     color: '#fff',
     fontSize: 15,
+    fontWeight: '600',
+  },
+  nearbyStoreSection: {
+    paddingHorizontal: 20,
+    marginTop: 24,
+    marginBottom: 20,
+  },
+  center: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  error: {
+    color: 'red',
+    fontSize: 14,
+    textAlign: 'center',
+  },
+  storeCard: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 15,
+    marginTop: 12,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+  },
+  storeHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  storeName: {
+    fontSize: 16,
+    fontWeight: '700',
+    flex: 1,
+    marginRight: 8,
+    color: colors.primaryText,
+  },
+  statusBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 20,
+  },
+  storeAddress: {
+    marginTop: 6,
+    color: '#555',
+    fontSize: 13,
+  },
+  storePhone: {
+    marginTop: 6,
+    color: colors.primary,
+    fontWeight: '500',
+    fontSize: 14,
+  },
+  storeDistance: {
+    marginTop: 6,
+    color: '#777',
+    fontSize: 13,
+  },
+  directionBtn: {
+    marginTop: 12,
+    backgroundColor: colors.primary,
+    paddingVertical: 10,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  directionText: {
+    color: '#fff',
     fontWeight: '600',
   },
 });

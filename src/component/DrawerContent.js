@@ -22,7 +22,7 @@ import * as Location from 'expo-location';
 
 const DrawerContent = ({ navigation }) => {
   const { user, loading: userLoading, refreshUser } = useUser();
-    const [addressText, setAddressText] = useState('');
+  const [addressText, setAddressText] = useState('');
   const [detectingLocation, setDetectingLocation] = useState(false);
   const [locationError, setLocationError] = useState('');
 
@@ -85,9 +85,9 @@ const DrawerContent = ({ navigation }) => {
         const meta = [place.city ?? place.subregion, place.region, place.postalCode]
           .filter(Boolean)
           .join(' ');
-        
+
         setAddressText([description, meta].filter(Boolean).join(' ') || 'Current location detected');
-        
+
         await saveLocationToCache(coords, description, meta);
       } else {
         setAddressText('Current location detected');
@@ -110,7 +110,7 @@ const DrawerContent = ({ navigation }) => {
           setLocationError('Location permission denied');
           return;
         }
-        
+
         Location.getCurrentPositionAsync({
           accuracy: Location.Accuracy.Low,
           maximumAge: 1000, // 1 second
@@ -123,7 +123,7 @@ const DrawerContent = ({ navigation }) => {
         });
         return;
       }
-      
+
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') {
         setLocationError('Location permission denied');
@@ -146,7 +146,7 @@ const DrawerContent = ({ navigation }) => {
       }).catch(error => {
         console.error('Error getting fresh location:', error);
       });
-      
+
     } catch (error) {
       console.error('Location detection error:', error);
       setLocationError('Unable to fetch your location');
@@ -168,7 +168,7 @@ const DrawerContent = ({ navigation }) => {
             setAddressText(text);
             return;
           }
-        } catch {}
+        } catch { }
       }
 
       // Next, try the current detected location cached by HomeScreen
@@ -181,7 +181,7 @@ const DrawerContent = ({ navigation }) => {
             setAddressText(text);
             return;
           }
-        } catch {}
+        } catch { }
       }
 
       // Fall back to default/first saved address from backend
@@ -264,12 +264,12 @@ const DrawerContent = ({ navigation }) => {
       },
     },
     {
-   icon: 'information-circle-outline',
-  label: 'About Us',
-  onPress: () => {
-    navigation.closeDrawer();
-    Linking.openURL('https://www.techruitz.com/');
-  },
+      icon: 'information-circle-outline',
+      label: 'About Us',
+      onPress: () => {
+        navigation.closeDrawer();
+        Linking.openURL('https://www.techruitz.com/');
+      },
     },
     {
       icon: 'location-outline',
@@ -279,12 +279,20 @@ const DrawerContent = ({ navigation }) => {
         navigation.navigate('MainTabs', { screen: 'Home', params: { screen: 'Address' } });
       },
     },
-     {
+    {
       icon: 'storefront-outline',
       label: 'Near By Store',
       onPress: () => {
         navigation.closeDrawer();
         navigation.navigate('MainTabs', { screen: 'Home', params: { screen: 'NearByStore' } });
+      },
+    },
+    {
+      icon: 'pricetag-outline',
+      label: 'Pricing',
+      onPress: () => {
+        navigation.closeDrawer();
+        navigation.navigate('MainTabs', { screen: 'Home', params: { screen: 'ViewPricing' } });
       },
     },
     {
