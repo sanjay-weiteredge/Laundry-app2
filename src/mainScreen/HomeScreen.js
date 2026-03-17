@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
 
 import {
@@ -27,9 +27,64 @@ import { fetchAddresses } from '../services/address';
 import { fetchUserServices } from '../services/services';
 import { useUser } from '../context/UserContext';
 import AutoSwiper from '../component/swiper';
-import axios from 'axios';
-import * as Location from 'expo-location';
 import { API } from '../services/apiRequest';
+
+const STORE_LOCATIONS = [
+  {
+    id: 1,
+    name: "Tellapur Store",
+    code: "500046",
+    address: "Tellapur Road, Tellapur/Nallagandla, Hyderabad, Telangana 500046",
+    mapUrl: "https://maps.app.goo.gl/aHKEpF56SySUtn7s5",
+    phone: "7799456886",
+    email: "info@thelaundryguyz.com",
+  },
+  {
+    id: 2,
+    name: "West Maredpally Store",
+    code: "500026",
+    address: "Near St marks high school, East Marredpally, Secunderabad, Hyderabad, Telangana 500026",
+    mapUrl: "https://maps.app.goo.gl/BruPr85ch8c83RQG6",
+    phone: "7799456886",
+    email: "info@thelaundryguyz.com",
+  },
+  {
+    id: 3,
+    name: "Padma Rao Nagar Store",
+    code: "500020",
+    address: "Padmarao Nagar main road, Secunderabad, Telangana 500020",
+    mapUrl: "https://maps.app.goo.gl/YJWRoWuYjv12LwLH6",
+    phone: "7799456886",
+    email: "info@thelaundryguyz.com",
+  },
+  {
+    id: 4,
+    name: "Yapral Store",
+    code: "500087",
+    address: "Yapral Main Rd, Yapral, Secunderabad, Telangana 500087",
+    mapUrl: "https://maps.app.goo.gl/8oXakRoAm9DuuWGf9",
+    phone: "7799456886",
+    email: "info@thelaundryguyz.com",
+  },
+  {
+    id: 5,
+    name: "Saket Store",
+    code: "500103",
+    address: "Near Saket Towers, Kapra-Saket Road, Kapra, Secunderabad, Telangana 500103",
+    mapUrl: "https://maps.app.goo.gl/4c7o1h4HMyZ3FuHK6",
+    phone: "7799456886",
+    email: "info@thelaundryguyz.com",
+  },
+  {
+    id: 6,
+    name: "AS Rao Nagar Store",
+    code: "500062",
+    address: "Pista House lane, AS Rao Nagar, Hyderabad, Telangana 500062",
+    mapUrl: "https://maps.app.goo.gl/tToPoM6WJVFTHdr17",
+    phone: "7799456886",
+    email: "info@thelaundryguyz.com",
+  }
+];
 
 const getAddressIdentifier = (address) =>
   address?.id?.toString() ??
@@ -106,10 +161,7 @@ const HomeScreen = ({ navigation, route }) => {
   const [refreshing, setRefreshing] = useState(false);
   const [swiperRefreshKey, setSwiperRefreshKey] = useState(0);
 
-  // Nearby Store State
-  const [stores, setStores] = useState([]);
-  const [loadingStores, setLoadingStores] = useState(true);
-  const [storeError, setStoreError] = useState(null);
+
 
   // Calculate item width to show 3 items at a time
   const screenWidth = Dimensions.get('window').width;
@@ -197,60 +249,41 @@ const HomeScreen = ({ navigation, route }) => {
     }
   }, []);
 
-  const fetchNearbyStores = useCallback(async () => {
-    try {
-      setLoadingStores(true);
-      const token = await AsyncStorage.getItem('userToken');
-      if (!token) {
-        setStoreError('Please login again');
-        return;
+  const flatListRef = useRef(null);
+  const [currentIndex, setCurrentIndex] = useState(0);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (flatListRef.current) {
+        let nextIndex = currentIndex + 1;
+        if (nextIndex >= STORE_LOCATIONS.length) {
+          nextIndex = 0;
+        }
+        flatListRef.current.scrollToIndex({ index: nextIndex, animated: true });
+        setCurrentIndex(nextIndex);
       }
+    }, 3000);
 
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') {
-        setStoreError('Location permission denied');
-        return;
-      }
+    return () => clearInterval(interval);
+  }, [currentIndex]);
 
-      let location = await Location.getLastKnownPositionAsync();
-      if (!location) {
-        location = await Location.getCurrentPositionAsync({});
-      }
+  const onMomentumScrollEnd = (event) => {
+    const index = Math.round(event.nativeEvent.contentOffset.x / (screenWidth - 40));
+    setCurrentIndex(index);
+  };
 
-      const { latitude, longitude } = location.coords;
-
-      const res = await axios.get(`${API}/users/nearby-stores`, {
-        params: {
-          latitude,
-          longitude,
-          radius_km: 3,
-        },
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
-
-      if (res.data.success) {
-        setStores(res.data.data);
-      } else {
-        setStoreError(res.data.message);
-      }
-    } catch (err) {
-      setStoreError('Failed to fetch nearby stores');
-      console.log(err);
-    } finally {
-      setLoadingStores(false);
+  const openDirections = (address, mapUrl) => {
+    if (mapUrl && mapUrl.trim() !== '') {
+      Linking.openURL(mapUrl);
+    } else {
+      const url = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`;
+      Linking.openURL(url);
     }
-  }, []);
-
-  const openDirections = (lat, lng) => {
-    const url = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`;
-    Linking.openURL(url);
   };
 
-  const callStore = (phone) => {
-    Linking.openURL(`tel:${phone}`);
-  };
+
+
+
 
   const fetchServices = useCallback(async () => {
     try {
@@ -288,8 +321,7 @@ const HomeScreen = ({ navigation, route }) => {
   useEffect(() => {
     fetchUserProfile();
     fetchServices();
-    fetchNearbyStores();
-  }, [fetchUserProfile, fetchServices, fetchNearbyStores]);
+  }, [fetchUserProfile, fetchServices]);
 
 
   useFocusEffect(
@@ -300,21 +332,16 @@ const HomeScreen = ({ navigation, route }) => {
         navigation.setParams({ refresh: false });
       }
 
-      // Reset selected services if a booking was just completed
 
       if (route.params?.bookingCompleted) {
         setSelectedServices({});
-        // Clean up the param to avoid resetting on every focus
         navigation.setParams({ bookingCompleted: undefined });
       }
 
-      // Initial data fetch
       fetchUserProfile();
       fetchServices();
       fetchSavedAddresses();
-      fetchNearbyStores();
 
-      // Handle other params like hidePromo
       if (route.params?.hidePromo) {
         setShowPromoCard(false);
         navigation.setParams({ hidePromo: undefined });
@@ -350,9 +377,8 @@ const HomeScreen = ({ navigation, route }) => {
       fetchUserProfile(),
       fetchServices(),
       fetchSavedAddresses(),
-      fetchNearbyStores(),
     ]).finally(() => setRefreshing(false));
-  }, []); // Dependencies are stable
+  }, []);
 
   const fetchSavedAddresses = useCallback(async () => {
     try {
@@ -470,7 +496,7 @@ const HomeScreen = ({ navigation, route }) => {
   );
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
+    <SafeAreaView style={styles.container} edges={['left', 'right', 'bottom']}>
       <ScrollView
         showsVerticalScrollIndicator={false}
         refreshControl={
@@ -547,63 +573,55 @@ const HomeScreen = ({ navigation, route }) => {
         </View>
 
         <View style={styles.nearbyStoreSection}>
-          <Text style={styles.sectionTitle}>Nearby Stores</Text>
-          {loadingStores ? (
-            <View style={styles.center}>
-              <ActivityIndicator size="large" color={colors.primary} />
-              <Text style={styles.loadingText}>Loading nearby stores...</Text>
-            </View>
-          ) : storeError ? (
-            <View style={styles.center}>
-              <Text style={styles.error}>{storeError}</Text>
-            </View>
-          ) : stores.length === 0 ? (
-            <View style={styles.center}>
-              <Text style={styles.loadingText}>No nearby stores found</Text>
-            </View>
-          ) : (
-            stores.map((item) => (
-              <View key={item.id} style={styles.storeCard}>
-                <View style={styles.storeHeader}>
-                  <Text style={styles.storeName}>{item.name}</Text>
-                  <View
-                    style={[
-                      styles.statusBadge,
-                      { backgroundColor: item.is_active ? '#E6F7EC' : '#FFEAEA' },
-                    ]}
-                  >
-                    <Text
-                      style={{
-                        color: item.is_active ? '#1E9E5A' : '#D9534F',
-                        fontWeight: '600',
-                      }}
+          <Text style={styles.sectionTitle}>Drop by The Laundry Guyz stores!</Text>
+          <FlatList
+            ref={flatListRef}
+            data={STORE_LOCATIONS}
+            style={{ marginTop: 15 }}
+            horizontal
+            pagingEnabled
+            showsHorizontalScrollIndicator={false}
+            keyExtractor={(item) => item.id}
+            onMomentumScrollEnd={onMomentumScrollEnd}
+            getItemLayout={(data, index) => ({
+              length: screenWidth - 40,
+              offset: (screenWidth - 40) * index,
+              index,
+            })}
+            renderItem={({ item }) => (
+              <View style={{ width: screenWidth - 40 }}>
+                <View style={styles.storeCard}>
+                  <View style={styles.storeHeader}>
+                    <Text style={styles.storeName}>{item.name}</Text>
+                    <View
+                      style={[
+                        styles.statusBadge,
+                        { backgroundColor: '#E6F7EC' },
+                      ]}
                     >
-                      {item.is_active ? 'Available' : 'Closed'}
-                    </Text>
+                      <Text
+                        style={{
+                          color: '#1E9E5A',
+                          fontWeight: '600',
+                        }}
+                      >
+                        Open
+                      </Text>
+                    </View>
                   </View>
-                </View>
 
-                <Text style={styles.storeAddress}>{item.address}</Text>
+                  <Text style={styles.storeAddress}>{item.address}</Text>
 
-                {item.phone ? (
-                  <TouchableOpacity onPress={() => callStore(item.phone)}>
-                    <Text style={styles.storePhone}>📞 {item.phone}</Text>
+                  <TouchableOpacity
+                    style={styles.directionBtn}
+                    onPress={() => openDirections(item.address, item.mapUrl)}
+                  >
+                    <Text style={styles.directionText}>Get Directions</Text>
                   </TouchableOpacity>
-                ) : null}
-
-                <Text style={styles.storeDistance}>
-                  Distance: {item.distance.toFixed(2)} km
-                </Text>
-
-                <TouchableOpacity
-                  style={styles.directionBtn}
-                  onPress={() => openDirections(item.latitude, item.longitude)}
-                >
-                  <Text style={styles.directionText}>Get Directions</Text>
-                </TouchableOpacity>
+                </View>
               </View>
-            ))
-          )}
+            )}
+          />
         </View>
       </ScrollView>
 
@@ -688,10 +706,9 @@ const styles = StyleSheet.create({
   gridCard: {
     backgroundColor: 'transparent',
     borderRadius: 12,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: 'transparent',
+    padding: 10,
     height: 140,
+    width: '100%',
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -707,7 +724,7 @@ const styles = StyleSheet.create({
   },
   horizontalListContainer: {
     paddingHorizontal: 20,
-    paddingVertical: 12,
+    paddingVertical: 5,
   },
   gridCardSelected: {
     borderColor: colors.primary,
@@ -743,15 +760,15 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
   },
   gridIconWrap: {
-    width: 50,
-    height: 50,
+    width: 70,
+    height: 70,
     borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
   },
   gridIcon: {
-    width: 55,
-    height: 55,
+    width: 70,
+    height: 70,
     alignSelf: "center"
   },
   gridTick: {
@@ -775,10 +792,13 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   gridTitle: {
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '700',
     color: colors.primaryText,
     textAlign: 'center',
+    height: 40,
+    textAlignVertical: 'center',
+    width: '100%',
   },
   gridSubtitle: {
     fontSize: 12,
@@ -787,8 +807,8 @@ const styles = StyleSheet.create({
   continueButtonContainer: {
     alignItems: 'center',
     justifyContent: 'center',
-    // width: '90%',
     paddingHorizontal: 20,
+    marginTop: 10,
   },
   continueButton: {
     alignSelf: 'stretch',

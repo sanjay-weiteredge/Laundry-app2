@@ -268,7 +268,7 @@ const DrawerContent = ({ navigation }) => {
       label: 'About Us',
       onPress: () => {
         navigation.closeDrawer();
-        Linking.openURL('https://www.techruitz.com/');
+        Linking.openURL('https://www.thelaundryguyz.com/');
       },
     },
     {

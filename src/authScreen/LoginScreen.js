@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -11,17 +11,35 @@ import {
   Platform,
   ActivityIndicator,
   Alert,
+  ImageBackground,
+  Animated,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import * as Location from 'expo-location';
+import { Ionicons } from '@expo/vector-icons';
 import colors from '../component/color';
 import { sendOTPRequest } from '../services/userAuth';
-
+import { registerForPushNotificationsAsync } from '../services/notificationService';
 
 const LoginScreen = ({ navigation }) => {
   const [phoneNumber, setPhoneNumber] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const insets = useSafeAreaInsets();
+
+  // Fast Location Method - Just request permissions
+  const requestLocationPermission = async () => {
+    try {
+      await Location.requestForegroundPermissionsAsync();
+    } catch (error) {
+      console.error('Error requesting location permission:', error);
+    }
+  };
+
+  useEffect(() => {
+    registerForPushNotificationsAsync();
+    requestLocationPermission();
+  }, []);
 
   const handleSendOTP = async () => {
     if (!phoneNumber || phoneNumber.length !== 10) {
@@ -32,9 +50,9 @@ const LoginScreen = ({ navigation }) => {
     try {
       setIsLoading(true);
       const response = await sendOTPRequest(phoneNumber);
-      
+
       if (response.success) {
-        navigation.navigate('Otp', { 
+        navigation.navigate('Otp', {
           phoneNumber: phoneNumber,
           otp: response.otp // Only for development/testing, remove in production
         });
@@ -56,11 +74,10 @@ const LoginScreen = ({ navigation }) => {
     >
       <StatusBar barStyle="light-content" translucent={true} />
 
-      <LinearGradient
-        colors={[colors.primary, colors.primaryLight ]}
-        style={styles.gradient}
-        start={{ x: 1, y: 0 }}
-        end={{ x: 0, y: 1 }}
+      <ImageBackground
+        source={require('../assests/login.jpeg')}
+        style={styles.backgroundImage}
+        resizeMode="cover"
       >
         <ScrollView
           style={styles.scrollView}
@@ -71,10 +88,6 @@ const LoginScreen = ({ navigation }) => {
           keyboardShouldPersistTaps="handled"
         >
           <View style={styles.topContent}>
-            <View style={styles.logoContainer}>
-              <Text style={styles.logoText}>🧺</Text>
-              <Text style={styles.logoTitle}>Laundry Bin</Text>
-            </View>
 
             <Text style={styles.heading}>Login or Signup</Text>
 
@@ -125,7 +138,7 @@ const LoginScreen = ({ navigation }) => {
             </Text>
           </View>
         </ScrollView>
-      </LinearGradient>
+      </ImageBackground>
     </KeyboardAvoidingView>
   );
 };
@@ -136,12 +149,15 @@ const styles = StyleSheet.create({
     width: '100%',
     justifyContent: 'center',
     alignItems: 'center',
+    backgroundColor: '#F1D2CA'
   },
   scrollView: {
     flex: 1,
   },
-  gradient: {
+  backgroundImage: {
     flex: 1,
+    width: '100%',
+    height: '100%',
     paddingTop: Number(StatusBar.currentHeight) || 0,
   },
   scrollContent: {
@@ -154,6 +170,7 @@ const styles = StyleSheet.create({
   topContent: {
     alignItems: 'center',
     alignSelf: 'stretch',
+    marginTop: 100, // Added to move text down away from background top elements
   },
   logoContainer: {
     alignItems: 'center',
@@ -174,7 +191,7 @@ const styles = StyleSheet.create({
   heading: {
     fontSize: 32,
     fontWeight: '600',
-    color: '#FFFFFF',
+    color: colors.primary,
     marginBottom: 40,
     textAlign: 'center',
   },

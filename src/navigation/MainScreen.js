@@ -16,6 +16,7 @@ import HelpSupport from '../mainScreen/HelpSupport';
 import EditProfile from '../mainScreen/EditProfile';
 import GlobalHeader from '../component/GlobalHeader';
 import DrawerContent from '../component/DrawerContent';
+import { registerForPushNotificationsAsync } from '../services/notificationService';
 
 import Feather from '@expo/vector-icons/Feather';
 import Ionicons from '@expo/vector-icons/Ionicons';
@@ -179,10 +180,8 @@ const CustomTabBar = ({ state, descriptors, navigation }) => {
             if (route.name === 'Whatsapp') {
               const openWhatsApp = async () => {
                 try {
-                  // Provided number: "95503 96999"
-                  const rawNumber = '95503 96999';
+                  const rawNumber = '8143725252';
                   const digitsOnly = rawNumber.replace(/\D/g, '');
-                  // If 10 digits (likely India), prefix +91. Otherwise assume it already includes country code.
                   const phoneWithCC = digitsOnly.length === 10 ? `+91${digitsOnly}` : `+${digitsOnly}`;
 
                   const appUrl = `whatsapp://send?phone=${phoneWithCC}`;
@@ -309,6 +308,10 @@ const TabNavigator = () => {
 };
 
 const MainScreen = () => {
+  React.useEffect(() => {
+    registerForPushNotificationsAsync();
+  }, []);
+
   return (
     <Drawer.Navigator
       drawerContent={(props) => <DrawerContent {...props} />}

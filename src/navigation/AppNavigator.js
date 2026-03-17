@@ -6,12 +6,11 @@ import * as Notifications from 'expo-notifications';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import SplashScreen from '../authScreen/SplashScreen';
-import OnboardingScreen from '../authScreen/OnboardingScreen';
+
 import LoginScreen from '../authScreen/LoginScreen';
 import OtpScreen from '../authScreen/OtpScreen';
 import BasicDetails from '../authScreen/BasicDetails';
 import MainScreen from './MainScreen';
-import { updateDeviceToken } from '../services/notificationService';
 
 // Handle notifications when the app is in the foreground
 Notifications.setNotificationHandler({
@@ -29,41 +28,6 @@ const AppNavigator = () => {
   const responseListener = useRef();
 
   useEffect(() => {
-    const registerForPushNotificationsAsync = async () => {
-      let token;
-      if (Platform.OS === 'android') {
-        await Notifications.setNotificationChannelAsync('default', {
-          name: 'Default Notifications',
-          importance: Notifications.AndroidImportance.HIGH,
-          sound: 'default',
-        });
-      }
-
-      const { status: existingStatus } = await Notifications.getPermissionsAsync();
-      let finalStatus = existingStatus;
-      if (existingStatus !== 'granted') {
-        const { status } = await Notifications.requestPermissionsAsync();
-        finalStatus = status;
-      }
-      if (finalStatus !== 'granted') {
-        console.log('Failed to get push token for push notification!');
-        return;
-      }
-      try {
-        token = (await Notifications.getDevicePushTokenAsync()).data;
-        const userToken = await AsyncStorage.getItem('userToken');
-        if (userToken && token) {
-          await updateDeviceToken(userToken, token);
-        }
-      } catch (e) {
-        console.error("Failed to get device token", e);
-      }
-
-      return token;
-    };
-
-    registerForPushNotificationsAsync();
-
     // This listener is fired whenever a notification is received while the app is foregrounded
     notificationListener.current = Notifications.addNotificationReceivedListener(notification => {
       console.log('Notification Received: ', notification);
@@ -90,7 +54,7 @@ const AppNavigator = () => {
         }}
       >
         <Stack.Screen name="Splash" component={SplashScreen} />
-        <Stack.Screen name="Onboarding" component={OnboardingScreen} />
+
         <Stack.Screen name="Login" component={LoginScreen} />
         <Stack.Screen name="Otp" component={OtpScreen} />
         <Stack.Screen name="BasicDetails" component={BasicDetails} />

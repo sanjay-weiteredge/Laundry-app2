@@ -3,12 +3,12 @@ import { API } from './apiRequest';
 
 export const getTimeSlots = async (date, serviceId, token) => {
   try {
-    
-    
+
+
     if (!token) {
       throw new Error('No authentication token provided');
     }
-    
+
     const response = await axios.get(`${API}/booking/time-slots`, {
       params: { date, serviceId },
       headers: {
@@ -17,16 +17,16 @@ export const getTimeSlots = async (date, serviceId, token) => {
       },
       timeout: 10000,
     });
-    
+
     console.log('Time slots API Response:', response.data);
-    
+
     if (response.data && response.data.success) {
       return response.data.data;
     } else {
       throw new Error(response.data?.message || 'Failed to fetch time slots');
     }
   } catch (error) {
-  
+
     throw error;
   }
 };
@@ -34,11 +34,11 @@ export const getTimeSlots = async (date, serviceId, token) => {
 export const bookService = async (bookingData, token) => {
   try {
     console.log('Booking service with data:', bookingData);
-    
+
     if (!token) {
       throw new Error('No authentication token provided');
     }
-    
+
     const response = await axios.post(`${API}/booking/book`, bookingData, {
       headers: {
         'Authorization': `Bearer ${token}`,
@@ -47,9 +47,9 @@ export const bookService = async (bookingData, token) => {
       },
       timeout: 15000,
     });
-    
+
     console.log('Booking API Response:', response.data);
-    
+
     if (response.data && response.data.success) {
       return response.data.data;
     } else {

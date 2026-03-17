@@ -23,7 +23,7 @@ const SelectTimeSlot = ({ navigation, route }) => {
   const [showNoAddressModal, setShowNoAddressModal] = useState(false);
   const [showRescheduleSuccessModal, setShowRescheduleSuccessModal] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
-  const [isExpress, setIsExpress] = useState(false);
+  const [selectedServiceType, setSelectedServiceType] = useState('3day');
   const modalAnimValue = useRef(new Animated.Value(0)).current;
 
   const { service, services: servicesParam, isReschedule, orderId, onRescheduleComplete } = route.params || {};
@@ -176,7 +176,6 @@ const SelectTimeSlot = ({ navigation, route }) => {
   }, []);
 
 
-  // Effect to load time slots when date or service changes
   useEffect(() => {
     let isMounted = true;
 
@@ -204,7 +203,6 @@ const SelectTimeSlot = ({ navigation, route }) => {
 
 
   const handleConfirmBooking = async () => {
-    // Validate input
     if (!selectedSlot) {
       setErrorMessage('Please select a time slot');
       setShowErrorModal(true);
@@ -233,7 +231,6 @@ const SelectTimeSlot = ({ navigation, route }) => {
           console.log('Reschedule API Response:', rescheduleResult);
 
           if (onRescheduleComplete) {
-            // Create updated order with new time slot
             const updatedOrder = {
               ...currentOrder,
               pickupSlot: {
@@ -247,7 +244,6 @@ const SelectTimeSlot = ({ navigation, route }) => {
             onRescheduleComplete(updatedOrder);
           }
 
-          // Navigate back after a short delay
           setTimeout(() => {
             navigation.goBack();
           }, 500);
@@ -257,7 +253,6 @@ const SelectTimeSlot = ({ navigation, route }) => {
           throw error;
         }
       } else {
-        // Handle new booking
         const addresses = await fetchAddresses(token);
         if (!addresses || addresses.length === 0) {
           setShowNoAddressModal(true);
@@ -266,14 +261,13 @@ const SelectTimeSlot = ({ navigation, route }) => {
 
         const addressId = addresses[0].id;
 
-        // Prepare booking data according to the new API
         const bookingData = {
-          services: services.map(s => s.id), // Just send array of service IDs
+          services: services.map(s => s.id),
           slotStart: selectedSlot.start,
           slotEnd: selectedSlot.end,
           addressId: addressId,
           notes: '',
-          isExpress: isExpress
+          isExpress: selectedServiceType !== '3day'
         };
 
         console.log('Sending booking request with data:', JSON.stringify(bookingData, null, 2));
@@ -286,7 +280,6 @@ const SelectTimeSlot = ({ navigation, route }) => {
             throw new Error('No response received from server');
           }
 
-          // Handle both response.data and direct response (in case the API returns data directly)
           const responseData = response.data || response;
 
           if (!responseData) {
@@ -295,7 +288,6 @@ const SelectTimeSlot = ({ navigation, route }) => {
 
           console.log('Response data:', JSON.stringify(responseData, null, 2));
 
-          // Prepare order data for the success modal
           const orderData = {
             orderId: responseData.id || 'N/A',
             status: responseData.order_status || 'pending',
@@ -317,7 +309,6 @@ const SelectTimeSlot = ({ navigation, route }) => {
 
           console.log('Processed order data for modal:', JSON.stringify(orderData, null, 2));
 
-          // Show success modal with a small delay to ensure state updates properly
           setTimeout(() => {
             showSuccessModalAnimated(orderData);
           }, 100);
@@ -329,7 +320,6 @@ const SelectTimeSlot = ({ navigation, route }) => {
             stack: error.stack
           });
 
-          // Show more detailed error message to the user
           const errorMessage = error.response?.data?.message ||
             error.message ||
             'Failed to book service. Please try again.';
@@ -364,7 +354,7 @@ const SelectTimeSlot = ({ navigation, route }) => {
         style={[styles.dateItem, isSelected && styles.selectedDateItem]}
         onPress={() => {
           setSelectedDate(date);
-          setSelectedSlot(null); // Reset selected slot when date changes
+          setSelectedSlot(null);
         }}
       >
         <Text style={[styles.dayName, isSelected && styles.selectedDayName]}>{dayName}</Text>
@@ -397,7 +387,6 @@ const SelectTimeSlot = ({ navigation, route }) => {
         </View>
       );
     }
-      // Disable past slots when selected date is today
     const now = new Date();
     const isToday = selectedDate.toDateString() === now.toDateString();
     const isPastForToday = (slot) => {
@@ -409,7 +398,6 @@ const SelectTimeSlot = ({ navigation, route }) => {
       }
     };
 
-    // Group into Morning / Afternoon / Evening
     const groups = { MORNING: [], AFTERNOON: [], EVENING: [] };
     const getPeriod = (h) => {
       if (h >= 6 && h < 12) return 'MORNING';
@@ -519,10 +507,8 @@ const SelectTimeSlot = ({ navigation, route }) => {
       return null;
     }
 
-    // Extract services from booking data
     const services = bookingData.items || [];
 
-    // Helper function to render service items
     const renderServiceItem = (item, index) => {
       if (!item || !item.service) return null;
 
@@ -672,7 +658,10 @@ const SelectTimeSlot = ({ navigation, route }) => {
     <>
       <BookingSuccessModal />
       <SafeAreaView style={styles.container}>
-        <ScrollView contentContainerStyle={styles.scrollContent}>
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+        >
 
 
 
@@ -692,22 +681,67 @@ const SelectTimeSlot = ({ navigation, route }) => {
             {dates.map((date) => renderDateItem(date))}
           </ScrollView>
 
-         
+
 
           <Text style={styles.sectionTitle}>Select Time Slot</Text>
           {renderTimeSlots()}
-           <View style={styles.expressContainer}>
-            <TouchableOpacity 
+          <View style={styles.expressContainer}>
+            <TouchableOpacity
               style={styles.checkboxContainer}
-              onPress={() => setIsExpress(!isExpress)}
+              onPress={() => setSelectedServiceType('3hr')}
             >
-              <View style={[styles.checkbox, isExpress && styles.checked]}>
-                {isExpress && <Ionicons name="checkmark" size={16} color="white" />}
+              <View style={[styles.checkbox, selectedServiceType === '3hr' && styles.checked]}>
+                {selectedServiceType === '3hr' && <View style={styles.radioInner} />}
               </View>
-              <Text style={styles.expressText}>Express Service (Faster Delivery)</Text>
+              <Text style={styles.expressText}>Priority Service (3 Hours)</Text>
             </TouchableOpacity>
-            {isExpress && (
-              <Text style={styles.expressNote}>Note: Express service may have additional charges</Text>
+            {selectedServiceType === '3hr' && (
+              <Text style={styles.expressNote}>Note:Priority Service (3 Hours) may have additional charges</Text>
+            )}
+          </View>
+
+          <View style={styles.expressContainer}>
+            <TouchableOpacity
+              style={styles.checkboxContainer}
+              onPress={() => setSelectedServiceType('9hr')}
+            >
+              <View style={[styles.checkbox, selectedServiceType === '9hr' && styles.checked]}>
+                {selectedServiceType === '9hr' && <View style={styles.radioInner} />}
+              </View>
+              <Text style={styles.expressText}>Same-Day Service (9 Hours)</Text>
+            </TouchableOpacity>
+            {selectedServiceType === '9hr' && (
+              <Text style={styles.expressNote}>Note:Same-Day Service (9 Hours) may have additional charges</Text>
+            )}
+          </View>
+
+          <View style={styles.expressContainer}>
+            <TouchableOpacity
+              style={styles.checkboxContainer}
+              onPress={() => setSelectedServiceType('24hr')}
+            >
+              <View style={[styles.checkbox, selectedServiceType === '24hr' && styles.checked]}>
+                {selectedServiceType === '24hr' && <View style={styles.radioInner} />}
+              </View>
+              <Text style={styles.expressText}>Next-Day Service (24 Hours)</Text>
+            </TouchableOpacity>
+            {selectedServiceType === '24hr' && (
+              <Text style={styles.expressNote}>Note:Next-Day Service (24 Hours) may have additional charges</Text>
+            )}
+          </View>
+
+          <View style={styles.expressContainer}>
+            <TouchableOpacity
+              style={styles.checkboxContainer}
+              onPress={() => setSelectedServiceType('3day')}
+            >
+              <View style={[styles.checkbox, selectedServiceType === '3day' && styles.checked]}>
+                {selectedServiceType === '3day' && <View style={styles.radioInner} />}
+              </View>
+              <Text style={styles.expressText}>Standard Service (3 Days)</Text>
+            </TouchableOpacity>
+            {selectedServiceType === '3day' && (
+              <Text style={styles.expressNote}>Note: Standard service delivery within 3 days</Text>
             )}
           </View>
           <View style={styles.confirmButtonContainer}>
@@ -732,10 +766,10 @@ const SelectTimeSlot = ({ navigation, route }) => {
             </TouchableOpacity>
           </View>
         </ScrollView>
-      </SafeAreaView>
+      </SafeAreaView >
 
       {/* Error Modal */}
-      <Modal
+      < Modal
         transparent
         visible={showErrorModal}
         animationType="fade"
@@ -754,9 +788,8 @@ const SelectTimeSlot = ({ navigation, route }) => {
             </TouchableOpacity>
           </View>
         </View>
-      </Modal>
+      </Modal >
 
-      {/* No Address Modal */}
       <Modal
         transparent
         visible={showNoAddressModal}
@@ -779,7 +812,6 @@ const SelectTimeSlot = ({ navigation, route }) => {
                 style={styles.errorModalButton}
                 onPress={() => {
                   setShowNoAddressModal(false);
-                  // Navigate directly to the Address screen
                   navigation.navigate('MainTabs', {
                     screen: 'Home',
                     params: { screen: 'Address', params: { fromDeepLink: true } },
@@ -794,7 +826,6 @@ const SelectTimeSlot = ({ navigation, route }) => {
         </View>
       </Modal>
 
-      {/* Reschedule Success Modal */}
       <Modal
         transparent
         visible={showRescheduleSuccessModal}
@@ -823,6 +854,10 @@ const SelectTimeSlot = ({ navigation, route }) => {
 };
 
 const styles = StyleSheet.create({
+  scrollContent: {
+    paddingBottom: 30,
+    paddingHorizontal: 5,
+  },
   expressContainer: {
     marginBottom: 0,
     paddingHorizontal: 5,
@@ -842,15 +877,22 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  confirmButtonContainer:{
-   
+  confirmButtonContainer: {
+
   },
   checked: {
+    borderColor: colors.primary,
+  },
+  radioInner: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
     backgroundColor: colors.primary,
   },
   expressText: {
     fontSize: 16,
-    color: colors.text,
+    color: colors.primaryText,
+    fontWeight: '500',
   },
   expressNote: {
     fontSize: 12,
@@ -859,9 +901,10 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
   },
   container: {
-    flex: 1,
+    height: "95%",
     backgroundColor: '#fff',
     paddingHorizontal: 10,
+    paddingBottom: 20
   },
 
   calendarHeader: {
@@ -906,9 +949,9 @@ const styles = StyleSheet.create({
   selectedDateCircle: {
     backgroundColor: colors.primary,
   },
-    groupSection: {
-    marginTop: 8,
-    marginBottom: 8,
+  groupSection: {
+    marginTop: 0,
+    marginBottom: 0,
   },
   groupLabel: {
     fontSize: 12,
@@ -945,7 +988,6 @@ const styles = StyleSheet.create({
     color: colors.primary,
     fontWeight: '600',
   },
-  // Time Slots Styles
   timeSlotsContainer: {
     padding: 15,
     paddingBottom: 30,
@@ -954,7 +996,6 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '600',
     color: colors.primaryText,
-    marginBottom: 20,
 
   },
   timeSlotsGrid: {
@@ -1053,7 +1094,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: colors.primaryText,
   },
-  // Modal styles
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.5)',

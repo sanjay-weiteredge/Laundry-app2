@@ -41,6 +41,8 @@ const createInitialFormState = () => ({
   landmark: '',
   label: 'Home',
   instructions: '',
+  latitude: '',
+  longitude: '',
 });
 
 const Addresss = ({ navigation }) => {
@@ -137,6 +139,15 @@ const Addresss = ({ navigation }) => {
             [place.street, place.district, place.subregion].filter(Boolean).join(', ') ||
             prev.street,
           landmark: place.subregion ?? prev.landmark,
+          latitude: String(currentPosition.coords.latitude),
+          longitude: String(currentPosition.coords.longitude),
+        }));
+      } else {
+        // Even if reverse geocoding fails, we should update lat/long
+        setForm((prev) => ({
+          ...prev,
+          latitude: String(currentPosition.coords.latitude),
+          longitude: String(currentPosition.coords.longitude),
         }));
       }
     } catch (error) {
@@ -199,6 +210,8 @@ const Addresss = ({ navigation }) => {
       landmark: address?.landmark || '',
       label: address?.label || 'Home',
       instructions: address?.instructions || '',
+      latitude: address?.latitude ? String(address.latitude) : address?.coords?.latitude ? String(address.coords.latitude) : '',
+      longitude: address?.longitude ? String(address.longitude) : address?.coords?.longitude ? String(address.coords.longitude) : '',
     };
 
     setForm({
@@ -211,9 +224,9 @@ const Addresss = ({ navigation }) => {
     const location =
       latitude !== null || longitude !== null
         ? {
-            latitude,
-            longitude,
-          }
+          latitude,
+          longitude,
+        }
         : address?.coords ?? null;
 
     setCoords(location);
@@ -270,28 +283,28 @@ const Addresss = ({ navigation }) => {
     }
   };
 
-  const handleAddressMenu = (address) => {
-    setSelectedAddress(address);
-    setSelectedAddressId(getAddressIdentifier(address));
-    setShowActionSheet(true);
-  };
+  // const handleAddressMenu = (address) => {
+  //   setSelectedAddress(address);
+  //   setSelectedAddressId(getAddressIdentifier(address));
+  //   setShowActionSheet(true);
+  // };
 
-  const handleActionSheetPress = (action) => {
-    setShowActionSheet(false);
-    switch (action) {
-      case 'edit':
-        handleEditAddress(selectedAddress);
-        break;
-      case 'setDefault':
-        handleSetDefaultAddress(selectedAddressId);
-        break;
-      case 'delete':
-        handleDeleteAddress(selectedAddressId);
-        break;
-      default:
-        break;
-    }
-  };
+  // const handleActionSheetPress = (action) => {
+  //   setShowActionSheet(false);
+  //   switch (action) {
+  //     case 'edit':
+  //       handleEditAddress(selectedAddress);
+  //       break;
+  //     case 'setDefault':
+  //       handleSetDefaultAddress(selectedAddressId);
+  //       break;
+  //     case 'delete':
+  //       handleDeleteAddress(selectedAddressId);
+  //       break;
+  //     default:
+  //       break;
+  //   }
+  // };
 
   const handleSaveAddress = async () => {
     if (!validateForm()) {
@@ -313,8 +326,8 @@ const Addresss = ({ navigation }) => {
         landmark: form.landmark?.trim() || '',
         label: form.label,
         instructions: form.instructions?.trim() || '',
-        latitude: coords?.latitude ?? null,
-        longitude: coords?.longitude ?? null,
+        latitude: form.latitude ? parseFloat(form.latitude) : null,
+        longitude: form.longitude ? parseFloat(form.longitude) : null,
         postal_code: form.pincode.trim() || null,
         country: null,
         isDefault: false,
@@ -356,8 +369,8 @@ const Addresss = ({ navigation }) => {
       landmark: form.landmark?.trim() || '',
       label: form.label,
       instructions: form.instructions?.trim() || '',
-      latitude: coords?.latitude ?? null,
-      longitude: coords?.longitude ?? null,
+      latitude: form.latitude ? parseFloat(form.latitude) : null,
+      longitude: form.longitude ? parseFloat(form.longitude) : null,
       postal_code: form.pincode.trim() || null,
       country: null,
       isDefault: false,
@@ -424,8 +437,8 @@ const Addresss = ({ navigation }) => {
       address.label === 'Work'
         ? 'briefcase-outline'
         : address.label === 'Other'
-        ? 'location-outline'
-        : 'home-outline';
+          ? 'location-outline'
+          : 'home-outline';
 
     return (
       <View key={cardKey} style={[styles.savedCard, isDefault && styles.defaultCard]}>
@@ -433,23 +446,40 @@ const Addresss = ({ navigation }) => {
           <View style={styles.savedCardTitle}>
             <Ionicons name={iconName} size={18} color={colors.primary} />
             <Text style={styles.savedCardName}>{name}</Text>
-            {isDefault && (
-              <View style={styles.defaultBadge}>
-                <Text style={styles.defaultBadgeText}>Default</Text>
-              </View>
-            )}
           </View>
-          <TouchableOpacity onPress={() => handleAddressMenu(address)}>
-            <Ionicons name="ellipsis-vertical" size={18} color={colors.secondaryText} />
-          </TouchableOpacity>
+          <View style={styles.cardActions}>
+            <TouchableOpacity onPress={() => handleEditAddress(address)} style={styles.iconButton}>
+              <Ionicons name="create-outline" size={20} color={colors.primary} />
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => handleDeleteAddress(getAddressIdentifier(address))} style={styles.iconButton}>
+              <Ionicons name="trash-outline" size={20} color="#FF6B6B" />
+            </TouchableOpacity>
+          </View>
         </View>
-        {primaryLine ? <Text style={styles.savedCardLine}>{primaryLine}</Text> : null}
-        {secondaryLine ? <Text style={styles.savedCardLine}>{secondaryLine}</Text> : null}
+        {primaryLine ? <Text style={styles.savedCardLine} numberOfLines={2}>{primaryLine}</Text> : null}
+        {secondaryLine ? <Text style={styles.savedCardLine} numberOfLines={2}>{secondaryLine}</Text> : null}
         {address.landmark ? (
           <Text style={styles.savedCardMeta}>Landmark: {address.landmark}</Text>
         ) : null}
         {phone ? <Text style={styles.savedCardMeta}>{phone}</Text> : null}
         {altPhone ? <Text style={styles.savedCardMeta}>{altPhone}</Text> : null}
+
+        <View style={styles.cardFooter}>
+          <TouchableOpacity
+            style={styles.defaultCheckboxRow}
+            onPress={() => !isDefault && handleSetDefaultAddress(getAddressIdentifier(address))}
+            activeOpacity={isDefault ? 1 : 0.7}
+          >
+            <Ionicons
+              name={isDefault ? "checkbox" : "square-outline"}
+              size={22}
+              color={colors.primary}
+            />
+            <Text style={[styles.defaultCheckboxText, isDefault && styles.defaultCheckboxTextActive]}>
+              {isDefault ? "Default Address" : "Set as Default"}
+            </Text>
+          </TouchableOpacity>
+        </View>
       </View>
     );
   };
@@ -601,6 +631,23 @@ const Addresss = ({ navigation }) => {
           <View style={styles.row}>
             <TextInput
               style={[styles.input, styles.rowInput, styles.rowInputLeft]}
+              placeholder="Latitude"
+              placeholderTextColor={colors.secondaryText}
+              value={form.latitude}
+              onChangeText={(value) => handleFieldChange('latitude', value)}
+            />
+            <TextInput
+              style={[styles.input, styles.rowInput]}
+              placeholder="Longitude"
+              placeholderTextColor={colors.secondaryText}
+              value={form.longitude}
+              onChangeText={(value) => handleFieldChange('longitude', value)}
+            />
+          </View>
+
+          <View style={styles.row}>
+            <TextInput
+              style={[styles.input, styles.rowInput, styles.rowInputLeft]}
               placeholder="State (Required)"
               placeholderTextColor={colors.secondaryText}
               value={form.state}
@@ -688,8 +735,8 @@ const Addresss = ({ navigation }) => {
                   ? 'Updating...'
                   : 'Saving...'
                 : editingAddressId
-                ? 'Update Address'
-                : 'Save Address'}
+                  ? 'Update Address'
+                  : 'Save Address'}
             </Text>
           </TouchableOpacity>
         </ScrollView>
@@ -700,7 +747,7 @@ const Addresss = ({ navigation }) => {
   return (
     <>
       {mode === 'form' ? renderFormMode() : renderListMode()}
-      
+
       {/* Action Sheet Modal */}
       <Modal
         visible={showActionSheet}
@@ -742,7 +789,7 @@ const Addresss = ({ navigation }) => {
           </View>
         </View>
       </Modal>
-      
+
       {/* Delete Confirmation Modal */}
       <Modal
         visible={showDeleteModal}
@@ -824,7 +871,7 @@ const styles = StyleSheet.create({
   },
   headerWrapper: {
     paddingHorizontal: 20,
-    paddingTop: (Number(StatusBar.currentHeight)-25),
+    paddingTop: (Number(StatusBar.currentHeight) - 25),
     paddingBottom: 16,
     backgroundColor: colors.mainColor,
   },
@@ -998,6 +1045,34 @@ const styles = StyleSheet.create({
   linkText: {
     color: colors.primary,
     fontSize: 13,
+    fontWeight: '600',
+  },
+  cardActions: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  iconButton: {
+    padding: 4,
+  },
+  cardFooter: {
+    marginTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#f0f0f0',
+    paddingTop: 10,
+  },
+  defaultCheckboxRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    alignSelf: 'flex-start',
+  },
+  defaultCheckboxText: {
+    fontSize: 14,
+    color: colors.secondaryText,
+    fontWeight: '500',
+  },
+  defaultCheckboxTextActive: {
+    color: colors.primary,
     fontWeight: '600',
   },
   removeLinkText: {

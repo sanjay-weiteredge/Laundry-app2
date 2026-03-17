@@ -7,10 +7,10 @@ import colors from './color';
 
 const GlobalHeader = ({ title, showBack = false }) => {
   const navigation = useNavigation();
-   const st = navigation.getState?.();
-    const currentRoute = st?.routes?.[st.index]?.name;
+  const st = navigation.getState?.();
+  const currentRoute = st?.routes?.[st.index]?.name;
   const handleNotificationPress = () => {
-   
+
 
 
     // When on Home stack (current route is 'Home'), navigate directly within the stack
@@ -31,9 +31,8 @@ const GlobalHeader = ({ title, showBack = false }) => {
   };
 
   const handleCallPress = () => {
-    // You can replace this with your actual support number
-    const phoneNumber = '+1234567890'; // Replace with actual number
-    
+    const phoneNumber = '+918143725252';
+
     Alert.alert(
       'Call Support',
       `Do you want to call ${phoneNumber}?`,
@@ -69,23 +68,23 @@ const GlobalHeader = ({ title, showBack = false }) => {
     >
       <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
       <View style={styles.headerContainer}>
-       
+
         <TouchableOpacity onPress={handleDrawerOpen} style={styles.iconButton}>
           <Feather name="menu" size={24} color="white" />
         </TouchableOpacity>
 
-     
+
         <Text style={styles.headerTitle}>{title}</Text>
 
-        {currentRoute=='Home' && (
-        <View style={styles.rightIcons}>
-          <TouchableOpacity onPress={handleNotificationPress} style={styles.iconButton}>
-            <Ionicons name="notifications-outline" size={24} color="white" />
-          </TouchableOpacity>
-          <TouchableOpacity onPress={handleCallPress} style={styles.iconButton}>
-            <Ionicons name="call-outline" size={24} color="white" />
-          </TouchableOpacity>
-        </View>
+        {currentRoute == 'Home' && (
+          <View style={styles.rightIcons}>
+            <TouchableOpacity onPress={handleNotificationPress} style={styles.iconButton}>
+              <Ionicons name="notifications-outline" size={24} color="white" />
+            </TouchableOpacity>
+            <TouchableOpacity onPress={handleCallPress} style={styles.iconButton}>
+              <Ionicons name="call-outline" size={24} color="white" />
+            </TouchableOpacity>
+          </View>
         )}
       </View>
     </LinearGradient>
@@ -106,7 +105,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 15,
     paddingVertical: 10,
-    minHeight: 50,
+    minHeight: 45,
   },
   iconButton: {
     padding: 8,
