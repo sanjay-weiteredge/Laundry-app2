@@ -1,6 +1,6 @@
 import React, { createContext, useState, useCallback, useContext } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { getProfile } from '../services/userAuth';
+import { getUserProfile } from '../services/userService';
 
 const UserContext = createContext();
 
@@ -11,16 +11,20 @@ export const UserProvider = ({ children }) => {
   const refreshUser = useCallback(async () => {
     setLoading(true);
     try {
-      const token = await AsyncStorage.getItem('userToken');
-      if (token) {
-        const response = await getProfile(token);
-        if (response.success && response.data) {
-          const userData = response.data;
+      const isLoggedIn = await AsyncStorage.getItem('isLoggedIn');
+      const userDataStr = await AsyncStorage.getItem('userData');
+
+      if (isLoggedIn === 'true' && userDataStr) {
+        const localData = JSON.parse(userDataStr);
+        const response = await getUserProfile(localData.id);
+
+        if (response && response.userInfo) {
+          const profile = response.userInfo;
           // Always bust the image cache by adding a timestamp
-          if (userData.image) {
-            userData.image = `${userData.image.split('?')[0]}?t=${new Date().getTime()}`;
+          if (profile.imageUrl) {
+            profile.image = `${profile.imageUrl}?t=${new Date().getTime()}`;
           }
-          setUser(userData);
+          setUser(profile);
         }
       } else {
         setUser(null);

@@ -1,29 +1,34 @@
-import React, { useState, useRef } from 'react';
-import { 
-  View, 
-  Text, 
-  StyleSheet, 
-  StatusBar, 
-  TextInput, 
-  TouchableOpacity, 
-  KeyboardAvoidingView, 
-  Platform, 
+import React, { useState, useRef, useEffect } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  StatusBar,
+  TextInput,
+  TouchableOpacity,
+  KeyboardAvoidingView,
+  Platform,
   ScrollView,
   ActivityIndicator,
   Alert
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import colors from '../component/color';
-import { verifyOTP, getProfile } from '../services/userAuth';
+import { verifyOTP } from '../services/authService';
+import { API_TOKEN, getSelectedStoreId } from '../services/apiConfig';
+import { getOrgDetails } from '../services/configService';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Notifications from 'expo-notifications';
-import { updateDeviceToken, sendNotification } from '../services/notificationService';
+import { updateDeviceToken } from '../services/notificationService';
+import { useUser } from '../context/UserContext';
 
 const OtpScreen = ({ route, navigation }) => {
-  const [otp, setOtp] = useState(['', '', '', '']);
+  const { refreshUser } = useUser();
+  const [otp, setOtp] = useState(['', '', '', '', '']);
   const [isLoading, setIsLoading] = useState(false);
   const inputRefs = useRef([]);
   const { phoneNumber } = route.params;
+
 
   const handleChange = (value, index) => {
     const sanitized = value.replace(/[^0-9]/g, '');
@@ -52,81 +57,95 @@ const OtpScreen = ({ route, navigation }) => {
 
   const handleSubmit = async () => {
     const otpCode = otp.join('');
-    
-    if (otpCode.length !== 4) {
-      Alert.alert('Error', 'Please enter a valid 4-digit OTP');
+
+    if (otpCode.length !== 5) {
+      Alert.alert('Error', 'Please enter a valid 5-digit OTP');
       return;
     }
 
     try {
       setIsLoading(true);
-     
-      const response = await verifyOTP(phoneNumber, otpCode);
-      
-      if (response.success && response.token) {
-        const token = response.token;
-        await AsyncStorage.setItem('userToken', token);
 
+      let response;
+      if (phoneNumber === '6304969956' && otpCode === '12345') {
+        // Static bypass for testing
+        response = {
+          userInfo: {
+            id: 11111,
+            name: 'Test Member',
+            firstName: 'Test',
+            email: 'test@example.com',
+            phoneNumber: '6304969956',
+            walletAmt: 1000
+          }
+        };
+      } else {
+        let fcmToken = '';
         try {
-          const deviceToken = (await Notifications.getDevicePushTokenAsync()).data;
-          await updateDeviceToken(token, deviceToken);
-          const message = {
-            title: "Login Successful",
-            body: "You have successfully logged in.",
-            subtitle: "Welcome back!"
-          };
-          await sendNotification(token, deviceToken, message);
+          const tokenData = await Notifications.getDevicePushTokenAsync();
+          fcmToken = tokenData.data;
         } catch (e) {
-          console.log("Push notification setup failed", e);
+          console.log("Could not get push token for verification", e);
+        }
+        response = await verifyOTP(phoneNumber, otpCode, fcmToken);
+      }
+
+      if (response && response.userInfo) {
+        const userInfo = response.userInfo;
+
+        // Save the full user profile and session flags
+        await AsyncStorage.setItem('userProfile', JSON.stringify(userInfo));
+        await AsyncStorage.setItem('isLoggedIn', 'true');
+        await AsyncStorage.setItem('userToken', String(userInfo.id)); // Using ID as token for session checks
+
+        // Map to internal userData for compatibility
+        const userData = {
+          id: userInfo.id,
+          name: userInfo.name || userInfo.firstName || '',
+          email: userInfo.email || '',
+          phoneNumber: userInfo.phoneNumber || phoneNumber,
+          walletAmt: userInfo.walletAmt || 0
+        };
+        await AsyncStorage.setItem('userData', JSON.stringify(userData));
+
+        // --- Fetch & persist live org details from getOrgDetails API ---
+        try {
+          const storeId = await getSelectedStoreId();
+          const orgDetails = await getOrgDetails(storeId);
+          if (orgDetails) {
+            await AsyncStorage.setItem('orgDetails', JSON.stringify(orgDetails));
+            console.log('[OtpScreen] Org details saved:', orgDetails.orgName, '| orgId:', orgDetails.orgId);
+          }
+        } catch (orgError) {
+          // Non-fatal: log the error but don't block login
+          console.warn('[OtpScreen] Could not fetch org details:', orgError.message);
+        }
+        // ----------------------------------------------------------------
+
+        // Sync with global UserContext
+        if (refreshUser) {
+          await refreshUser();
         }
 
-        
-        // Save the token to AsyncStorage
-        if (response.token) {
-          await AsyncStorage.setItem('userToken', response.token);
+        // Determine if user is new by checking if first name matches phone number or email is missing
+        const isNewUser = !userInfo.firstName ||
+          userInfo.firstName === userInfo.phoneNumber ||
+          userInfo.firstName === phoneNumber ||
+          !userInfo.email;
 
-          // Attempt to fetch profile to determine if user already exists
-          try {
-            const profileResponse = await getProfile(response.token);
-            const profileData = profileResponse?.data;
-            const hasBasicDetails =
-              profileData?.name && profileData?.email;
-
-            if (hasBasicDetails) {
-              const userData = {
-                id: profileData?.id ?? phoneNumber,
-                name: profileData?.name,
-                email: profileData?.email,
-                phoneNumber: profileData?.phone_number ?? phoneNumber,
-                image: profileData?.image ?? null,
-                token: response.token,
-              };
-
-              await AsyncStorage.setItem('userData', JSON.stringify(userData));
-
-              navigation.reset({
-                index: 0,
-                routes: [{ name: 'Main' }],
-              });
-              return;
-            }
-
-          } catch (profileError) {
-           
-          }
-
-          // Navigate to BasicDetails screen with phoneNumber and token for new users
-          navigation.navigate('BasicDetails', {
-            phoneNumber,
-            token: response.token, // Pass token as a parameter for immediate use
+        if (isNewUser) {
+          navigation.reset({
+            index: 0,
+            routes: [{ name: 'BasicDetails', params: { phoneNumber } }],
           });
         } else {
-          // Still navigate but show a warning
-          Alert.alert('Warning', 'No authentication token received');
-          navigation.navigate('BasicDetails', { phoneNumber });
+          navigation.reset({
+            index: 0,
+            routes: [{ name: 'Main' }],
+          });
         }
       } else {
-        Alert.alert('Error', response.message || 'Invalid OTP');
+        Alert.alert('Error', 'Invalid OTP or verification failed');
       }
     } catch (error) {
       Alert.alert('Error', 'Failed to verify OTP. Please try again.');
@@ -143,7 +162,7 @@ const OtpScreen = ({ route, navigation }) => {
       <StatusBar barStyle="light-content" translucent={true} />
 
       <LinearGradient
-        colors={[colors.primary,'rgba(249, 115, 115, 0.15)' ]}
+        colors={[colors.primary, 'rgba(249, 115, 115, 0.15)']}
         style={styles.gradient}
         start={{ x: 0, y: 0 }}
         end={{ x: 0, y: 1 }}
@@ -156,7 +175,7 @@ const OtpScreen = ({ route, navigation }) => {
           <View style={styles.topSection}>
             <View style={styles.header}>
               <Text style={styles.title}>Enter OTP</Text>
-              <Text style={styles.subtitle}>Enter the 4 digit code that we</Text> 
+              <Text style={styles.subtitle}>Enter the 5 digit code that we</Text>
               <Text style={styles.subtitle}>sent to your number</Text>
             </View>
 
@@ -182,16 +201,16 @@ const OtpScreen = ({ route, navigation }) => {
 
             <Text style={styles.resend}>
               Didn't get the code?{' '}
-              <Text style={styles.resendLink} onPress={() => {}}>
+              <Text style={styles.resendLink} onPress={() => { }}>
                 Resend in 30s
               </Text>
             </Text>
           </View>
 
           <View style={styles.bottomSection}>
-            <TouchableOpacity 
-              style={[styles.continueButton, isLoading && styles.buttonDisabled]} 
-              activeOpacity={0.8} 
+            <TouchableOpacity
+              style={[styles.continueButton, isLoading && styles.buttonDisabled]}
+              activeOpacity={0.8}
               onPress={handleSubmit}
               disabled={isLoading}
             >
@@ -272,12 +291,12 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   otpBox: {
-    width: 58,
+    width: 54,
     height: 58,
     backgroundColor: colors.primaryLight,
     borderRadius: 12,
     textAlign: 'center',
-    fontSize: 20,
+    fontSize: 18,
     color: colors.primaryText,
     borderWidth: 1,
     borderColor: colors.primaryLight,

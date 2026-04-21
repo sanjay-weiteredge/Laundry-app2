@@ -115,147 +115,160 @@ const HelpSupport = ({ navigation }) => {
 
   const handleContactSubmit = async () => {
     const { name, email, subject, message } = contactForm;
-    
+
     if (!name || !email || !subject || !message) {
       Alert.alert('Error', 'Please fill in all fields');
       return;
     }
 
     setIsSubmitting(true);
-    
+
     try {
-      // Simulate API call - replace with actual implementation
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      Alert.alert(
-        'Message Sent',
-        'Thank you for contacting us. We\'ll get back to you within 24 hours.',
-        [{ text: 'OK', onPress: () => setContactForm({ name: '', email: '', subject: '', message: '' }) }]
-      );
+      const supportEmail = 'support@thelaundryguyz.com';
+      const body = `Name: ${name}\nEmail: ${email}\n\n${message}`;
+      const mailtoUrl = `mailto:${supportEmail}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+
+      const canOpen = await Linking.canOpenURL(mailtoUrl);
+      if (!canOpen) {
+        Alert.alert('No Email App', 'Please set up an email app on your device to send messages.');
+        return;
+      }
+
+      await Linking.openURL(mailtoUrl);
+      setContactForm({ name: '', email: '', subject: '', message: '' });
     } catch (error) {
-      Alert.alert('Error', 'Failed to send message. Please try again.');
+      Alert.alert('Error', 'Failed to open email app. Please try again.');
     } finally {
       setIsSubmitting(false);
     }
   };
 
   const emergencyContacts = [
-    { type: 'Phone', value: '1800-123-4567', icon: 'call-outline' },
-    { type: 'Email', value: 'support@laundryservice.com', icon: 'mail-outline' },
-    { type: 'WhatsApp', value: '+91 98765 43210', icon: 'logo-whatsapp' },
+    { type: 'Phone', value: '+91 4079697735', icon: 'call-outline' },
+    { type: 'Email', value: 'support@thelaundryguyz.com', icon: 'mail-outline' },
+    { type: 'WhatsApp', value: '+91  8143725252', icon: 'logo-whatsapp' },
   ];
 
   return (
     <SafeAreaView style={styles.container}>
-      <KeyboardAvoidingView 
+      <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.keyboardAvoidingView}
       >
         <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        {/* Emergency Contacts */}
-        <View style={styles.emergencySection}>
-          <Text style={styles.sectionTitle}>Emergency Support</Text>
-          <View style={styles.contactGrid}>
-            {emergencyContacts.map((contact, index) => (
-              <TouchableOpacity 
-                key={index}
-                style={styles.contactCard}
-                onPress={() => {
-                  if (contact.type === 'Phone') {
-                    Linking.openURL(`tel:${contact.value}`);
-                  } else if (contact.type === 'Email') {
-                    Linking.openURL(`mailto:${contact.value}`);
-                  } else if (contact.type === 'WhatsApp') {
-                    Linking.openURL(`whatsapp://send?phone=${contact.value.replace(/\s/g, '')}`);
-                  }
-                }}
-              >
-                <Ionicons name={contact.icon} size={24} color={colors.primary} />
-                <Text style={styles.contactType}>{contact.type}</Text>
-                <Text style={styles.contactValue}>{contact.value}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        </View>
-
-        {/* FAQ Sections */}
-        <View style={styles.faqSection}>
-          <Text style={styles.sectionTitle}>Frequently Asked Questions</Text>
-          {faqSections.map((section) => (
-            <View key={section.id} style={styles.faqCategory}>
-              <TouchableOpacity 
-                style={styles.categoryHeader}
-                onPress={() => toggleSection(section.id)}
-              >
-                <View style={styles.categoryLeft}>
-                  <Ionicons name={section.icon} size={20} color={colors.primary} />
-                  <Text style={styles.categoryTitle}>{section.title}</Text>
-                </View>
-                <Ionicons 
-                  name={expandedSection === section.id ? 'chevron-up' : 'chevron-down'} 
-                  size={20} 
-                  color={colors.secondaryText} 
-                />
-              </TouchableOpacity>
-              
-              {expandedSection === section.id && (
-                <View style={styles.questionsContainer}>
-                  {section.questions.map((faq, qIndex) => (
-                    <View key={qIndex} style={styles.questionItem}>
-                      <Text style={styles.question}>{faq.q}</Text>
-                      <Text style={styles.answer}>{faq.a}</Text>
-                    </View>
-                  ))}
-                </View>
-              )}
+          {/* Emergency Contacts */}
+          <View style={styles.emergencySection}>
+            <Text style={styles.sectionTitle}>Emergency Support</Text>
+            <View style={styles.contactGrid}>
+              {emergencyContacts.map((contact, index) => (
+                <TouchableOpacity
+                  key={index}
+                  style={styles.contactCard}
+                  activeOpacity={0.7}
+                  onPress={() => {
+                    if (contact.type === 'Phone') {
+                      Linking.openURL(`tel:${contact.value}`);
+                    } else if (contact.type === 'Email') {
+                      const mailtoUrl = `mailto:${contact.value}`;
+                      Linking.openURL(mailtoUrl);
+                    } else if (contact.type === 'WhatsApp') {
+                      Linking.openURL(`whatsapp://send?phone=${contact.value.replace(/\s/g, '')}`);
+                    }
+                  }}
+                >
+                  <View style={styles.contactIconWrap}>
+                    <Ionicons name={contact.icon} size={22} color={colors.primary} />
+                  </View>
+                  <View style={styles.contactInfo}>
+                    <Text style={styles.contactType}>{contact.type}</Text>
+                    <Text style={styles.contactValue} numberOfLines={1} ellipsizeMode="tail">
+                      {contact.value}
+                    </Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={18} color="#CCCCCC" />
+                </TouchableOpacity>
+              ))}
             </View>
-          ))}
-        </View>
-
-        {/* Contact Form */}
-        <View style={styles.contactFormSection}>
-          <Text style={styles.sectionTitle}>Contact Us</Text>
-          <View style={styles.formContainer}>
-            <TextInput
-              style={styles.input}
-              placeholder="Your Name"
-              value={contactForm.name}
-              onChangeText={(text) => setContactForm({...contactForm, name: text})}
-            />
-            <TextInput
-              style={styles.input}
-              placeholder="Your Email"
-              value={contactForm.email}
-              onChangeText={(text) => setContactForm({...contactForm, email: text})}
-              keyboardType="email-address"
-            />
-            <TextInput
-              style={styles.input}
-              placeholder="Subject"
-              value={contactForm.subject}
-              onChangeText={(text) => setContactForm({...contactForm, subject: text})}
-            />
-            <TextInput
-              style={[styles.input, styles.textArea]}
-              placeholder="How can we help you?"
-              value={contactForm.message}
-              onChangeText={(text) => setContactForm({...contactForm, message: text})}
-              multiline
-              numberOfLines={4}
-            />
-            
-            <TouchableOpacity 
-              style={[styles.submitButton, isSubmitting && styles.disabledButton]}
-              onPress={handleContactSubmit}
-              disabled={isSubmitting}
-            >
-              <Text style={styles.submitButtonText}>
-                {isSubmitting ? 'Sending...' : 'Send Message'}
-              </Text>
-            </TouchableOpacity>
           </View>
-        </View>
-      </ScrollView>
+
+          {/* FAQ Sections */}
+          {/* <View style={styles.faqSection}>
+            <Text style={styles.sectionTitle}>Frequently Asked Questions</Text>
+            {faqSections.map((section) => (
+              <View key={section.id} style={styles.faqCategory}>
+                <TouchableOpacity
+                  style={styles.categoryHeader}
+                  onPress={() => toggleSection(section.id)}
+                >
+                  <View style={styles.categoryLeft}>
+                    <Ionicons name={section.icon} size={20} color={colors.primary} />
+                    <Text style={styles.categoryTitle}>{section.title}</Text>
+                  </View>
+                  <Ionicons
+                    name={expandedSection === section.id ? 'chevron-up' : 'chevron-down'}
+                    size={20}
+                    color={colors.secondaryText}
+                  />
+                </TouchableOpacity>
+
+                {expandedSection === section.id && (
+                  <View style={styles.questionsContainer}>
+                    {section.questions.map((faq, qIndex) => (
+                      <View key={qIndex} style={styles.questionItem}>
+                        <Text style={styles.question}>{faq.q}</Text>
+                        <Text style={styles.answer}>{faq.a}</Text>
+                      </View>
+                    ))}
+                  </View>
+                )}
+              </View>
+            ))}
+          </View> */}
+
+          {/* Contact Form */}
+          <View style={styles.contactFormSection}>
+            <Text style={styles.sectionTitle}>Contact Us</Text>
+            <View style={styles.formContainer}>
+              <TextInput
+                style={styles.input}
+                placeholder="Your Name"
+                value={contactForm.name}
+                onChangeText={(text) => setContactForm({ ...contactForm, name: text })}
+              />
+              <TextInput
+                style={styles.input}
+                placeholder="Your Email"
+                value={contactForm.email}
+                onChangeText={(text) => setContactForm({ ...contactForm, email: text })}
+                keyboardType="email-address"
+              />
+              <TextInput
+                style={styles.input}
+                placeholder="Subject"
+                value={contactForm.subject}
+                onChangeText={(text) => setContactForm({ ...contactForm, subject: text })}
+              />
+              <TextInput
+                style={[styles.input, styles.textArea]}
+                placeholder="How can we help you?"
+                value={contactForm.message}
+                onChangeText={(text) => setContactForm({ ...contactForm, message: text })}
+                multiline
+                numberOfLines={4}
+              />
+
+              <TouchableOpacity
+                style={[styles.submitButton, isSubmitting && styles.disabledButton]}
+                onPress={handleContactSubmit}
+                disabled={isSubmitting}
+              >
+                <Text style={styles.submitButtonText}>
+                  {isSubmitting ? 'Sending...' : 'Send Message'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -302,28 +315,46 @@ const styles = StyleSheet.create({
     borderBottomColor: '#f0f0f0',
   },
   contactGrid: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+    gap: 12,
   },
   contactCard: {
-    flex: 1,
+    flexDirection: 'row',
     alignItems: 'center',
     padding: 16,
-    backgroundColor: '#f8f9fa',
+    backgroundColor: '#fff',
     borderRadius: 12,
-    marginHorizontal: 4,
+    borderWidth: 1,
+    borderColor: '#f0f0f0',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  contactIconWrap: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#FFF0F0',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 16,
+  },
+  contactInfo: {
+    flex: 1,
   },
   contactType: {
     fontSize: 12,
-    color: colors.secondaryText,
-    marginTop: 8,
+    fontWeight: '600',
+    color: colors.primary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 2,
   },
   contactValue: {
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: '500',
     color: colors.primaryText,
-    marginTop: 4,
-    textAlign: 'center',
   },
   faqSection: {
     padding: 20,

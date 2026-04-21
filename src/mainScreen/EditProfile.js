@@ -16,9 +16,8 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import * as ImagePicker from 'expo-image-picker';
 import colors from '../component/color';
-import { getProfile, updateProfile } from '../services/userAuth';
+import { getUserProfile, updateUserProfile } from '../services/userService';
 import { useUser } from '../context/UserContext';
 
 const EditProfile = ({ navigation }) => {
@@ -27,11 +26,9 @@ const EditProfile = ({ navigation }) => {
     name: '',
     email: '',
     phone: '',
-    image: null,
   });
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState(false);
-  const [showImagePickerModal, setShowImagePickerModal] = useState(false);
   const [originalName, setOriginalName] = useState('');
   const [originalEmail, setOriginalEmail] = useState('');
   const [showSuccessModal, setShowSuccessModal] = useState(false);
@@ -51,79 +48,29 @@ const EditProfile = ({ navigation }) => {
         return;
       }
 
-      const response = await getProfile(token);
+      const userDataStr = await AsyncStorage.getItem('userData');
+      if (!userDataStr) return;
+      const localData = JSON.parse(userDataStr);
+
+      const response = await getUserProfile(localData.id);
       
-      if (response.success && response.data) {
-        const userData = response.data;
+      if (response && response.userInfo) {
+        const userData = response.userInfo;
         setProfileData({
           name: userData.name || '',
           email: userData.email || '',
-          phone: userData.phone_number || '',
-          image: userData.image || null,
+          phone: userData.phoneNumber || '',
         });
         setOriginalName(userData.name || '');
         setOriginalEmail(userData.email || '');
       } else {
-        throw new Error(response.message || 'Failed to fetch profile data');
+        throw new Error('Failed to fetch profile data');
       }
     } catch (error) {
       console.error('Error fetching profile:', error);
       Alert.alert('Error', error.message || 'Failed to load profile data');
     } finally {
       setLoading(false);
-    }
-  };
-
-  const pickImage = async (source) => {
-    try {
-      let permissionResult;
-      
-      if (source === 'camera') {
-        permissionResult = await ImagePicker.requestCameraPermissionsAsync();
-        if (permissionResult.granted === false) {
-          Alert.alert('Permission Required', 'Please grant camera permissions to take a photo');
-          return;
-        }
-
-        const result = await ImagePicker.launchCameraAsync({
-          mediaTypes: ImagePicker.MediaTypeOptions.Images,
-          allowsEditing: true,
-          aspect: [1, 1],
-          quality: 0.7,
-        });
-
-        if (!result.canceled) {
-          setProfileData(prev => ({
-            ...prev,
-            image: result.assets[0].uri
-          }));
-        }
-      } else {
-        permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
-        if (permissionResult.granted === false) {
-          Alert.alert('Permission Required', 'Please grant gallery permissions to select a photo');
-          return;
-        }
-
-        const result = await ImagePicker.launchImageLibraryAsync({
-          mediaTypes: ImagePicker.MediaTypeOptions.Images,
-          allowsEditing: true,
-          aspect: [1, 1],
-          quality: 0.7,
-        });
-
-        if (!result.canceled) {
-          setProfileData(prev => ({
-            ...prev,
-            image: result.assets[0].uri
-          }));
-        }
-      }
-      
-      setShowImagePickerModal(false);
-    } catch (error) {
-      console.error('Error picking image:', error);
-      Alert.alert('Error', 'Failed to pick image');
     }
   };
 
@@ -136,25 +83,20 @@ const EditProfile = ({ navigation }) => {
     try {
       setUpdating(true);
       
-      const token = await AsyncStorage.getItem('userToken');
-      if (!token) {
-        throw new Error('Please log in again');
-      }
+      const userDataStr = await AsyncStorage.getItem('userData');
+      if (!userDataStr) return;
+      const localData = JSON.parse(userDataStr);
       
-      // Only include image if it's a new image (not a URL)
-      const userData = {
-        name: profileData.name,
+      const updateData = {
+        firstName: profileData.name,
         email: profileData.email,
-        ...(profileData.image && !profileData.image.startsWith('http') && { image: profileData.image })
+        phoneNumber: profileData.phone,
+        officePhoneNumber: ""
       };
       
-      console.log('Updating profile with data:', {
-        name: userData.name,
-        hasImage: !!userData.image,
-        imageType: userData.image ? typeof userData.image : 'none'
-      });
+      console.log('Updating profile with payload:', updateData);
       
-      const response = await updateProfile(null, userData, token);
+      const response = await updateUserProfile(localData.id, updateData);
       
       if (response.success) {
         setOriginalName(profileData.name);
@@ -194,8 +136,7 @@ const EditProfile = ({ navigation }) => {
   };
 
   const hasChanges = profileData.name !== originalName || 
-    profileData.email !== originalEmail ||
-    (profileData.image && !profileData.image.startsWith('https'));
+    profileData.email !== originalEmail;
 
   if (loading) {
     return (
@@ -215,22 +156,6 @@ const EditProfile = ({ navigation }) => {
         style={{ flex: 1 }}
       >
         <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-
-        <View style={styles.imageSection}>
-          <View style={styles.imageContainer}>
-            {profileData.image ? (
-              <Image source={{ uri: profileData.image }} style={styles.profileImage} />
-            ) : (
-              <View style={styles.placeholderImage}>
-                <Ionicons name="person" size={60} color={colors.placeholderText} />
-              </View>
-            )}
-          </View>
-          <TouchableOpacity style={styles.changeImageButton} onPress={() => setShowImagePickerModal(true)}>
-            <Ionicons name="camera" size={20} color={colors.primary} />
-            <Text style={styles.changeImageText}>Change Photo</Text>
-          </TouchableOpacity>
-        </View>
 
         {/* Profile Information */}
         <View style={styles.infoSection}>
@@ -304,31 +229,6 @@ const EditProfile = ({ navigation }) => {
         </View>
       </ScrollView>
       
-      {/* Image Picker Modal */}
-      <Modal
-        visible={showImagePickerModal}
-        transparent={true}
-        animationType="slide"
-        onRequestClose={() => setShowImagePickerModal(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Select Photo</Text>
-            <TouchableOpacity style={styles.modalOption} onPress={() => pickImage('camera')}>
-              <Ionicons name="camera" size={24} color={colors.primary} />
-              <Text style={styles.modalOptionText}>Take Photo</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.modalOption} onPress={() => pickImage('gallery')}>
-              <Ionicons name="images" size={24} color={colors.primary} />
-              <Text style={styles.modalOptionText}>Choose from Gallery</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.modalCancelButton} onPress={() => setShowImagePickerModal(false)}>
-              <Text style={styles.modalCancelText}>Cancel</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
-      
       {/* Success Modal */}
       <Modal
         animationType="fade"
@@ -398,44 +298,6 @@ const styles = StyleSheet.create({
   content: {
     flex: 1,
     paddingHorizontal: 20,
-  },
-  imageSection: {
-    alignItems: 'center',
-    paddingVertical: 30,
-  },
-  imageContainer: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    overflow: 'hidden',
-    marginBottom: 16,
-    borderWidth: 3,
-    borderColor: colors.primary,
-  },
-  profileImage: {
-    width: '100%',
-    height: '100%',
-  },
-  placeholderImage: {
-    width: '100%',
-    height: '100%',
-    backgroundColor: '#f8f9fa',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  changeImageButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#f8f9fa',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-  },
-  changeImageText: {
-    marginLeft: 8,
-    fontSize: 14,
-    color: colors.primary,
-    fontWeight: '500',
   },
   infoSection: {
     paddingVertical: 20,
@@ -555,54 +417,6 @@ const styles = StyleSheet.create({
     color: '#666',
     textAlign: 'center',
     lineHeight: 22,
-  },
-  modalContent: {
-    backgroundColor: '#fff',
-    borderRadius: 20,
-    padding: 30,
-    alignItems: 'center',
-    marginHorizontal: 20,
-    minWidth: 300,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
-    elevation: 5,
-  },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: colors.primaryText,
-    marginBottom: 20,
-  },
-  modalOption: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 15,
-    paddingHorizontal: 20,
-    width: '100%',
-    borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
-  },
-  modalOptionText: {
-    fontSize: 16,
-    color: colors.primaryText,
-    marginLeft: 15,
-  },
-  modalCancelButton: {
-    marginTop: 10,
-    paddingVertical: 15,
-    paddingHorizontal: 20,
-    width: '100%',
-    alignItems: 'center',
-  },
-  modalCancelText: {
-    fontSize: 16,
-    color: colors.primary,
-    fontWeight: '600',
   },
 });
 

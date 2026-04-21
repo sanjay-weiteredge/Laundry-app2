@@ -6,10 +6,10 @@ import { getActivePosters } from '../services/poster';
 const { width } = Dimensions.get('window');
 
 const fallbackImages = [
-  require('../assests/poster/1.jpg'),
-  require('../assests/poster/2.jpg'),
-  require('../assests/poster/3.jpg'),
-  require('../assests/poster/4.jpg'),
+  require('../assests/poster/1.png'),
+  require('../assests/poster/2.png'),
+  require('../assests/poster/3.png'),
+  require('../assests/poster/4.png'),
 ];
 
 const AutoSwiper = ({ refreshKey }) => {
@@ -17,15 +17,8 @@ const AutoSwiper = ({ refreshKey }) => {
   const [images, setImages] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    const timer = setInterval(() => {
-      if (swiperRef.current) {
-        swiperRef.current.scrollBy(1, true);
-      }
-    }, 2000);
-
-    return () => clearInterval(timer);
-  }, []);
+  // Dynamic height based on screen width (slightly taller for posters)
+  const swiperHeight = width * 0.65;
 
   useEffect(() => {
     let isMounted = true;
@@ -57,24 +50,26 @@ const AutoSwiper = ({ refreshKey }) => {
 
   if (loading) {
     return (
-      <View style={[styles.container, styles.loadingContainer]}>
+      <View style={[styles.container, styles.loadingContainer, { height: swiperHeight }]}>
         <ActivityIndicator size="large" />
       </View>
     );
   }
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { height: swiperHeight }]}>
       <Swiper
         ref={swiperRef}
         style={styles.wrapper}
         showsButtons={false}
-        autoplay={false}
+        autoplay={true}
+        autoplayTimeout={3.5}
         loop={true}
         showsPagination={true}
         dotStyle={styles.paginationDot}
         activeDotStyle={styles.paginationActiveDot}
         paginationStyle={styles.pagination}
+        removeClippedSubviews={false} // Helps with Android rendering glitches
       >
         {images.map((image, index) => (
           <View key={index} style={styles.slide}>
@@ -92,7 +87,6 @@ const AutoSwiper = ({ refreshKey }) => {
 
 const styles = StyleSheet.create({
   container: {
-    height: 200,
     marginBottom: 15,
   },
   loadingContainer: {
@@ -108,7 +102,9 @@ const styles = StyleSheet.create({
   image: {
     width: '100%',
     height: '100%',
-    borderRadius: 10,
+    // Removed specific border radius if full bleed is preferred, 
+    // or set a subtle one to match the card theme
+    borderRadius: 8,
   },
   pagination: {
     bottom: 10,

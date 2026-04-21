@@ -30,7 +30,7 @@ export const verifyOTP = async (phoneNumber, otp) => {
 
 export const getProfile = async (token, options = {}) => {
   console.log('Starting getProfile with token:', token ? 'Token exists' : 'No token');
-  
+
   try {
     if (!token) {
       throw new Error('No authentication token provided');
@@ -75,16 +75,16 @@ export const getProfile = async (token, options = {}) => {
     }
   } catch (error) {
     console.error('Error in getProfile:', error);
-    
+
     if (error.response) {
       console.error('Response data:', error.response.data);
       console.error('Response status:', error.response.status);
-      
+
       if (error.response.status === 401) {
         await AsyncStorage.removeItem('userToken');
         throw new Error('Your session has expired. Please log in again.');
       }
-      
+
       throw new Error(error.response.data?.message || 'Failed to fetch profile');
     } else if (error.request) {
       console.error('No response received:', error.request);
@@ -97,34 +97,34 @@ export const getProfile = async (token, options = {}) => {
 };
 
 const MAX_RETRIES = 3;
-const RETRY_DELAY = 1000; 
+const RETRY_DELAY = 1000;
 
 export const updateProfile = async (userId, userData, token, retryCount = 0) => {
-  console.log('updateProfile called with:', { 
-    userId, 
-    userData: { 
-      ...userData, 
-      image: userData.image ? 'Image present' : 'No image' 
+  console.log('updateProfile called with:', {
+    userId,
+    userData: {
+      ...userData,
+      image: userData.image ? 'Image present' : 'No image'
     },
     retryCount
   });
-  
+
   try {
     if (!token) {
       throw new Error('No authentication token provided');
     }
 
     const formData = new FormData();
-    
+
     // Add user data
     if (userData.name) formData.append('name', userData.name);
     if (userData.email) formData.append('email', userData.email);
-    
+
     // Add image if present
     if (userData.image) {
       const imageUriParts = userData.image.split('.');
       const fileType = imageUriParts[imageUriParts.length - 1];
-      
+
       formData.append('image', {
         uri: userData.image,
         name: `photo_${Date.now()}.${fileType}`,
@@ -138,7 +138,7 @@ export const updateProfile = async (userId, userData, token, retryCount = 0) => 
       formDataFields: Array.from(formData.keys()),
       imageIncluded: !!userData.image
     });
-    
+
     // Add timeout to the request
     const source = axios.CancelToken.source();
     const timeout = setTimeout(() => {
@@ -159,13 +159,13 @@ export const updateProfile = async (userId, userData, token, retryCount = 0) => 
         transformRequest: (data) => data, // Prevent axios from transforming form data
         timeout: 15000, // 15 seconds timeout
       });
-      
+
       clearTimeout(timeout);
       console.log('Update profile response:', response.data);
       return response.data;
     } catch (error) {
       clearTimeout(timeout);
-      
+
       // Check if this is a network error that might be worth retrying
       if (isNetworkError(error) && retryCount < MAX_RETRIES) {
         console.log(`Retrying request (${retryCount + 1}/${MAX_RETRIES})...`);
@@ -173,7 +173,7 @@ export const updateProfile = async (userId, userData, token, retryCount = 0) => 
         await new Promise(resolve => setTimeout(resolve, RETRY_DELAY * (retryCount + 1)));
         return updateProfile(userId, userData, token, retryCount + 1);
       }
-      
+
       throw error; // Re-throw if not a network error or max retries reached
     }
   } catch (error) {
@@ -230,7 +230,7 @@ function isNetworkError(error) {
     !error.response && // No response from server
     error.request && // The request was made but no response was received
     (error.code === 'ECONNABORTED' || // Timeout
-     error.code === 'ERR_NETWORK' || // Network error
-     error.message === 'Network Error')
+      error.code === 'ERR_NETWORK' || // Network error
+      error.message === 'Network Error')
   );
 }

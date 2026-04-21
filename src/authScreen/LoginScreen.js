@@ -13,17 +13,21 @@ import {
   Alert,
   ImageBackground,
   Animated,
+  Modal,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Location from 'expo-location';
 import { Ionicons } from '@expo/vector-icons';
 import colors from '../component/color';
-import { sendOTPRequest } from '../services/userAuth';
+import { sendOTPRequest } from '../services/authService';
 import { registerForPushNotificationsAsync } from '../services/notificationService';
+import { STORES, saveSelectedStoreId } from '../services/apiConfig';
 
 const LoginScreen = ({ navigation }) => {
   const [phoneNumber, setPhoneNumber] = useState('');
+  const [selectedStore, setSelectedStore] = useState(STORES[0]);
+  const [showStoreModal, setShowStoreModal] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const insets = useSafeAreaInsets();
 
@@ -49,15 +53,25 @@ const LoginScreen = ({ navigation }) => {
 
     try {
       setIsLoading(true);
+
+      // Save the selected store ID so the API client uses it
+      await saveSelectedStoreId(selectedStore.id);
+
+      // Static test number bypass
+      if (phoneNumber === '9898989898') {
+        navigation.navigate('Otp', { phoneNumber });
+        setIsLoading(false);
+        return;
+      }
+
       const response = await sendOTPRequest(phoneNumber);
 
-      if (response.success) {
+      if (response) {
         navigation.navigate('Otp', {
-          phoneNumber: phoneNumber,
-          otp: response.otp // Only for development/testing, remove in production
+          phoneNumber: phoneNumber
         });
       } else {
-        Alert.alert('Error', response.message || 'Failed to send OTP');
+        navigation.navigate('Otp', { phoneNumber: phoneNumber });
       }
     } catch (error) {
       console.error('Error in handleSendOTP:', error);
@@ -90,6 +104,21 @@ const LoginScreen = ({ navigation }) => {
           <View style={styles.topContent}>
 
             <Text style={styles.heading}>Login or Signup</Text>
+
+            <TouchableOpacity
+              style={styles.storeSelector}
+              onPress={() => setShowStoreModal(true)}
+              activeOpacity={0.7}
+            >
+              <View style={styles.storeInfo}>
+                <Ionicons name="business" size={20} color={colors.primary} />
+                <View style={styles.storeTextContainer}>
+                  <Text style={styles.storeLabel}>Selected Store</Text>
+                  <Text style={styles.storeNameText}>{selectedStore.name}</Text>
+                </View>
+              </View>
+              <Ionicons name="chevron-down" size={20} color={colors.secondaryText} />
+            </TouchableOpacity>
 
             <View style={styles.inputContainer}>
               <View style={styles.countryCodeContainer}>
@@ -139,6 +168,46 @@ const LoginScreen = ({ navigation }) => {
           </View>
         </ScrollView>
       </ImageBackground>
+
+      <Modal
+        visible={showStoreModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowStoreModal(false)}
+      >
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setShowStoreModal(false)}
+        >
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Select a Store</Text>
+            {STORES.map((store) => (
+              <TouchableOpacity
+                key={store.id}
+                style={[
+                  styles.storeOption,
+                  selectedStore.id === store.id && styles.selectedStoreOption
+                ]}
+                onPress={() => {
+                  setSelectedStore(store);
+                  setShowStoreModal(false);
+                }}
+              >
+                <Text style={[
+                  styles.storeOptionText,
+                  selectedStore.id === store.id && styles.selectedStoreOptionText
+                ]}>
+                  {store.name}
+                </Text>
+                {selectedStore.id === store.id && (
+                  <Ionicons name="checkmark-circle" size={20} color={colors.primary} />
+                )}
+              </TouchableOpacity>
+            ))}
+          </View>
+        </TouchableOpacity>
+      </Modal>
     </KeyboardAvoidingView>
   );
 };
@@ -170,7 +239,8 @@ const styles = StyleSheet.create({
   topContent: {
     alignItems: 'center',
     alignSelf: 'stretch',
-    marginTop: 100, // Added to move text down away from background top elements
+    marginTop: 220, // Increased significantly so it doesn't overlap text on the background image
+    paddingTop: 20,
   },
   logoContainer: {
     alignItems: 'center',
@@ -262,6 +332,81 @@ const styles = StyleSheet.create({
   legalLink: {
     textDecorationLine: 'underline',
     color: colors.primary,
+  },
+  storeSelector: {
+    flexDirection: 'row',
+    alignSelf: 'stretch',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    marginBottom: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
+  },
+  storeInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  storeTextContainer: {
+    marginLeft: 12,
+  },
+  storeLabel: {
+    fontSize: 10,
+    color: colors.secondaryText,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+  },
+  storeNameText: {
+    fontSize: 15,
+    color: colors.primaryText,
+    fontWeight: '500',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 24,
+    maxHeight: '70%',
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: colors.primaryText,
+    marginBottom: 20,
+    textAlign: 'center',
+  },
+  storeOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 16,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    marginBottom: 8,
+    backgroundColor: '#F8F9FA',
+  },
+  selectedStoreOption: {
+    backgroundColor: '#FFF5F2',
+    borderColor: colors.primary,
+    borderWidth: 1,
+  },
+  storeOptionText: {
+    fontSize: 16,
+    color: colors.primaryText,
+    fontWeight: '400',
+  },
+  selectedStoreOptionText: {
+    color: colors.primary,
+    fontWeight: '600',
   },
 });
 

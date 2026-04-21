@@ -18,13 +18,12 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-// removed gradient in favor of solid primary button per design
 import colors from '../component/color';
 import images from '../component/image';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { getProfile } from '../services/userAuth';
-import { fetchAddresses } from '../services/address';
-import { fetchUserServices } from '../services/services';
+import { getUserProfile } from '../services/userService';
+import { fetchUserAddresses } from '../services/addressService';
+import { listAllCatalogs } from '../services/catalogService';
 import { useUser } from '../context/UserContext';
 import AutoSwiper from '../component/swiper';
 import { API } from '../services/apiRequest';
@@ -32,58 +31,61 @@ import { API } from '../services/apiRequest';
 const STORE_LOCATIONS = [
   {
     id: 1,
-    name: "Tellapur Store",
-    code: "500046",
-    address: "Tellapur Road, Tellapur/Nallagandla, Hyderabad, Telangana 500046",
-    mapUrl: "https://maps.app.goo.gl/aHKEpF56SySUtn7s5",
-    phone: "7799456886",
-    email: "info@thelaundryguyz.com",
+    name: "Yapral",
+    code: "500087",
+    address: "The Laundry Guyz, Yapral Main Rd, Opposite Raam Honda Showroom, Sai Krupa Colony, Yapral, Secunderabad, Telangana 500087",
+    mapUrl: "https://maps.app.goo.gl/oCNvYAjyUwiMrbZk7?g_st=aw", // Add your Google Maps link here
+    phone: "+91 4079697735",
+    email: "support@thelaundryguyz.com",
   },
   {
     id: 2,
-    name: "West Maredpally Store",
-    code: "500026",
-    address: "Near St marks high school, East Marredpally, Secunderabad, Hyderabad, Telangana 500026",
-    mapUrl: "https://maps.app.goo.gl/BruPr85ch8c83RQG6",
-    phone: "7799456886",
-    email: "info@thelaundryguyz.com",
+    name: "Saket",
+    code: "500103",
+    address: "The Laundry Guyz, Near Saket  Towers , Saket Rd, Kapra, Secunderabad, Telangana 500103",
+    mapUrl: "https://maps.app.goo.gl/Zz5Bhv6bDtEXQ9qa8?g_st=aw",
+    phone: "+91 4079697735",
+    email: "support@thelaundryguyz.com",
   },
   {
     id: 3,
-    name: "Padma Rao Nagar Store",
-    code: "500020",
-    address: "Padmarao Nagar main road, Secunderabad, Telangana 500020",
-    mapUrl: "https://maps.app.goo.gl/YJWRoWuYjv12LwLH6",
-    phone: "7799456886",
-    email: "info@thelaundryguyz.com",
+    name: "AS Rao Nagar",
+    code: "500062",
+    address: "Pista house Lane , Maruti Nagar Rd, A. S. Rao Nagar, Secunderabad, 500062",
+    mapUrl: "https://maps.app.goo.gl/WngwKgJhRCZnzyED6?g_st=aw",
+    phone: "+91 4079697735",
+    email: "support@thelaundryguyz.com",
   },
   {
     id: 4,
-    name: "Yapral Store",
-    code: "500087",
-    address: "Yapral Main Rd, Yapral, Secunderabad, Telangana 500087",
-    mapUrl: "https://maps.app.goo.gl/8oXakRoAm9DuuWGf9",
-    phone: "7799456886",
-    email: "info@thelaundryguyz.com",
+    name: "Maredpally/Mahendra Hill's",
+    code: "500026",
+    address: "The Laundry Guyz , Near St. Marks High School, East Marredpally, Secunderabad, Telangana – 500026",
+    mapUrl: "https://maps.app.goo.gl/oggrpV4mskFzBRuZ6?g_st=aw",
+    phone: "+91 4079697735",
+    email: "support@thelaundryguyz.com",
   },
+
+
   {
     id: 5,
-    name: "Saket Store",
-    code: "500103",
-    address: "Near Saket Towers, Kapra-Saket Road, Kapra, Secunderabad, Telangana 500103",
-    mapUrl: "https://maps.app.goo.gl/4c7o1h4HMyZ3FuHK6",
-    phone: "7799456886",
-    email: "info@thelaundryguyz.com",
+    name: "Padma Rao Nagar",
+    code: "500020",
+    address: "The Laundry Guyz, MIGH Colony, Walker Town, Padmarao Nagar Mai Road, Secunderabad, Telangana 500003",
+    mapUrl: "https://maps.app.goo.gl/s7iEW3ZSchrBgeNP8?g_st=aw", // Add your Google Maps link here
+    phone: "+91 4079697735",
+    email: "support@thelaundryguyz.com",
   },
   {
     id: 6,
-    name: "AS Rao Nagar Store",
-    code: "500062",
-    address: "Pista House lane, AS Rao Nagar, Hyderabad, Telangana 500062",
-    mapUrl: "https://maps.app.goo.gl/tToPoM6WJVFTHdr17",
-    phone: "7799456886",
-    email: "info@thelaundryguyz.com",
+    name: "Tellapur",
+    code: "500046",
+    address: " The Laundry Guyz, Tellapur Rd, Tellapur, Next to Honer Vivantis Hyderabad, Nallagandla, Telangana 500046",
+    mapUrl: "https://maps.app.goo.gl/x6zxQFXFiLNvK5rCA?g_st=aw",
+    phone: "+91 4079697735",
+    email: "support@thelaundryguyz.com",
   }
+
 ];
 
 const getAddressIdentifier = (address) =>
@@ -163,18 +165,14 @@ const HomeScreen = ({ navigation, route }) => {
 
 
 
-  // Calculate item width to show 3 items at a time
   const screenWidth = Dimensions.get('window').width;
   const itemWidth = (screenWidth - 60) / 3; // 60 = 20 padding on each side + 20 gap between items
-
   const toggleServiceSelection = (service) => {
     setSelectedServices(prev => {
       if (prev[service.id]) {
-        // Remove service if already selected
         const { [service.id]: _, ...rest } = prev;
         return rest;
       } else {
-        // Add service with quantity 1 if not selected
         return {
           ...prev,
           [service.id]: {
@@ -195,6 +193,24 @@ const HomeScreen = ({ navigation, route }) => {
   const handleContinue = () => {
     const selected = Object.values(selectedServices);
     if (selected.length > 0) {
+      const allCategories = [];
+      const categoryMap = new Map();
+
+      selected.forEach(service => {
+        if (service.categories && Array.isArray(service.categories)) {
+          service.categories.forEach(cat => {
+            if (!categoryMap.has(cat.id)) {
+              categoryMap.set(cat.id, {
+                ...cat,
+                parentService: service.title,
+                catalogId: service.id
+              });
+              allCategories.push(categoryMap.get(cat.id));
+            }
+          });
+        }
+      });
+
       navigation.navigate('SelectTimeSlot', {
         services: selected,
         selectedAddress
@@ -234,12 +250,16 @@ const HomeScreen = ({ navigation, route }) => {
         return;
       }
 
-      const response = await getProfile(token);
+      const userDataStr = await AsyncStorage.getItem('userData');
+      if (!userDataStr) return;
+      const localData = JSON.parse(userDataStr);
 
-      if (response.success && response.data) {
-        setUserData(response.data);
+      const response = await getUserProfile(localData.id);
+
+      if (response && response.userInfo) {
+        setUserData(response.userInfo);
       } else {
-        console.error('Profile fetch failed:', response.message);
+        console.error('Profile fetch failed: Invalid response format');
       }
     } catch (error) {
       console.error('Error fetching user profile:', error);
@@ -288,29 +308,38 @@ const HomeScreen = ({ navigation, route }) => {
   const fetchServices = useCallback(async () => {
     try {
       setLoadingServices(true);
+      console.log('Fetching catalogs from Fabklean...');
 
-      const token = await AsyncStorage.getItem('userToken');
-      if (!token) {
-        throw new Error('Please log in again');
+      const catalogItems = await listAllCatalogs();
+
+      if (catalogItems && catalogItems.length > 0) {
+        const mappedServices = catalogItems.map(catalog => {
+          const titleLower = (catalog.title || '').toLowerCase();
+          let imageSource = images.service1; // Default
+
+          if (titleLower.includes('dry')) {
+            imageSource = images.service3;
+          } else if (titleLower.includes('iron')) {
+            imageSource = images.service2;
+          } else if (titleLower.includes('fold') || titleLower.includes('wash')) {
+            imageSource = images.service1;
+          }
+
+          return {
+            id: catalog.id,
+            title: catalog.title || 'Service',
+            description: catalog.shortDescription || catalog.description || '',
+            categories: catalog.catalogCategories || [],
+            imageSource: catalog.imageExtension ? { uri: catalog.imageExtension } : (catalog.imageUri ? { uri: catalog.imageUri } : imageSource)
+          };
+        });
+        setServices(mappedServices);
+      } else {
+        console.log('No services found in catalog items');
+        setServices([]);
       }
-
-      const servicesData = await fetchUserServices(token);
-
-
-
-      const mappedServices = servicesData.map(service => ({
-        id: service.id,
-        title: service.name,
-        description: service.description,
-        imageSource: service.image ? { uri: service.image } : images.service1
-      }));
-
-      setServices(mappedServices);
     } catch (error) {
       console.error('Error fetching services:', error);
-      console.error('Error details:', error.response?.data || error.message);
-      console.error('Full error:', error);
-      Alert.alert('Services Error', `Failed to load services: ${error.message || 'Network error'}`);
       setServices([]);
     } finally {
       setLoadingServices(false);
@@ -360,12 +389,23 @@ const HomeScreen = ({ navigation, route }) => {
   const headerAddressLine = [selectedAddressPrimary, selectedAddressSecondary].filter(Boolean).join(' ');
   const selectedAddressLabel = selectedAddress?.label || 'Current Location';
 
-  const handleSelectAddress = useCallback((address) => {
+  const handleSelectAddress = useCallback(async (address) => {
     setSelectedAddress(address);
     try {
-      AsyncStorage.setItem('@selectedAddress', JSON.stringify(address));
+      await AsyncStorage.setItem('@selectedAddress', JSON.stringify(address));
+
+      const pincode = address?.pincode || address?.postal_code || address?.zip || '';
+      if (pincode) {
+        const { getPincodeStatus } = require('../services/configService');
+        const { saveSelectedStoreId } = require('../services/apiConfig');
+        const data = await getPincodeStatus(pincode);
+        if (data && data.assaignStoreId) {
+          await saveSelectedStoreId(data.assaignStoreId);
+          console.log(`[HomeScreen] Global store switched to: ${data.assaignStoreId}`);
+        }
+      }
     } catch (e) {
-      console.warn('Failed to persist selected address');
+      console.warn('Failed to persist selected address or update store context:', e);
     }
     setLocationModalVisible(false);
   }, []);
@@ -383,7 +423,13 @@ const HomeScreen = ({ navigation, route }) => {
   const fetchSavedAddresses = useCallback(async () => {
     try {
       setLoadingAddresses(true);
-      const addresses = await fetchAddresses();
+      const userDataStr = await AsyncStorage.getItem('userData');
+      if (!userDataStr) return;
+      const localData = JSON.parse(userDataStr);
+
+      const response = await fetchUserAddresses(localData.id);
+
+      const addresses = response?.addresses || (Array.isArray(response) ? response : []);
 
       if (Array.isArray(addresses)) {
         setSavedAddresses(addresses);
@@ -395,11 +441,10 @@ const HomeScreen = ({ navigation, route }) => {
       }
     } catch (error) {
       console.error('Error fetching addresses:', error);
-      Alert.alert('Address Error', error?.message || 'Unable to load addresses. Please try again.');
     } finally {
       setLoadingAddresses(false);
     }
-  }, []);
+  }, [resolvePreferredAddress]);
 
 
   const renderAddressModal = () => (
@@ -1229,5 +1274,4 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 });
-
 export default HomeScreen;

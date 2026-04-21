@@ -9,7 +9,7 @@ import {
   Animated,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { getProfile } from '../services/userAuth';
+import { getUserProfile } from '../services/userService';
 import colors from '../component/color';
 
 const splashGif = require('../assests/splash/splash.gif');
@@ -49,16 +49,16 @@ const SplashScreen = ({ navigation }) => {
             if (parsed?.name) return navigation.replace('Main');
           }
 
-          const profileResponse = await getProfile(token);
-          const user = profileResponse?.data;
+          const profileResponse = await getUserProfile(JSON.parse(storedUser).id);
+          const user = profileResponse?.userInfo;
 
           if (user?.name) {
             const normalized = {
-              id: user?.id ?? user?._id ?? null,
+              id: user?.id,
               name: user?.name,
               email: user?.email ?? '',
-              phoneNumber: user?.phone_number ?? '',
-              image: user?.image ?? null,
+              phoneNumber: user?.phoneNumber ?? '',
+              image: user?.imageUrl ?? null,
               token,
             };
 
@@ -90,7 +90,6 @@ const SplashScreen = ({ navigation }) => {
         resizeMode="contain"
       />
 
-      <Text style={styles.text}>Your Local Services, Just a Tap Away!</Text>
     </View>
   );
 };

@@ -1,16 +1,27 @@
 import React, { useState, useCallback } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, Image, ActivityIndicator, SafeAreaView, RefreshControl } from 'react-native';
+import {
+  View,
+  Text,
+  StyleSheet,
+  FlatList,
+  TouchableOpacity,
+  ActivityIndicator,
+  SafeAreaView,
+  RefreshControl,
+  Alert
+} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import colors from '../component/color';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { getUserOrders } from '../services/orders';
+import { listAllUserOrders, cancelOrder } from '../services/orderService';
 
 const OrdersScreen = () => {
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [cancellingId, setCancellingId] = useState(null);
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
@@ -21,35 +32,42 @@ const OrdersScreen = () => {
     try {
       setLoading(true);
       setError(null);
-      
-      const token = await AsyncStorage.getItem('userToken');
-      if (!token) {
-        throw new Error('Please log in again');
+
+      const profileStr = await AsyncStorage.getItem('userProfile');
+      const profile = profileStr ? JSON.parse(profileStr) : null;
+      const userInfoId = profile?.id;
+
+      if (!userInfoId) {
+        throw new Error('Please log in to view orders');
       }
-      
-      const ordersData = await getUserOrders(token);
-      setOrders(ordersData);
-    } catch (error) {
-      console.error('Error fetching orders:', error);
-      setError(error.message || 'Failed to load orders');
+
+      // Call Fabklean API to fetch orders from all stores
+      const response = await listAllUserOrders(userInfoId);
+
+      // API returns { objectList: [...], totalResult, pageNo, ... }
+      const rawOrders = response?.objectList ?? [];
+
+      const processedOrders = rawOrders.map((order) => ({
+        ...order,
+        displayOrderId: order.orderId || String(order.id) || 'N/A',
+        orderDate: order.orderDate || '',
+        status: order.workflowStatus || 'PENDING',
+        storeName: order.organization?.name || order.storeName || 'Store',
+        total: typeof order.invoiceTotal === 'number' ? order.invoiceTotal : 0,
+        balance: typeof order.balanceAmount === 'number' ? order.balanceAmount : 0,
+        invoiceStatus: order.invoiceStatus || '',
+        pieces: order.pcsCount || 0,
+        dueDate: order.dueDate || '',
+        supplyDate: order.supplyDate || '',
+      }));
+
+      setOrders(processedOrders);
+    } catch (err) {
+      console.error('Error fetching orders:', err);
+      setError(err.message || 'Failed to load orders');
     } finally {
       setLoading(false);
     }
-  };
-
-  // Compute total amount for an order using robust fallbacks
-  const getOrderTotal = (order) => {
-    if (!order) return 0;
-    const direct = order.totalAmount || order.total || order.total_price || order.amount;
-    if (typeof direct === 'number') return direct;
-    // Fallback: sum line totals from services array if present
-    if (Array.isArray(order.services)) {
-      return order.services.reduce((sum, s) => {
-        const lt = s?.lineTotal || s?.line_total || (s?.price && s?.quantity ? s.price * s.quantity : 0);
-        return sum + (typeof lt === 'number' ? lt : 0);
-      }, 0);
-    }
-    return 0;
   };
 
   useFocusEffect(
@@ -58,132 +76,213 @@ const OrdersScreen = () => {
     }, [])
   );
 
+  const handleCancelOrder = (order) => {
+    // Determine the numeric ID for the cancel endpoint.
+    const extractNumericId = () => {
+      if (typeof order.id === 'number' || /^\d+$/.test(String(order.id))) return order.id;
+      if (typeof order.orderId === 'number' || /^\d+$/.test(String(order.orderId))) return order.orderId;
+      if (order.entityBaseId) return order.entityBaseId;
+      return order.id;
+    };
+    const numericId = extractNumericId();
+
+    Alert.alert(
+      "Cancel Order",
+      `Are you sure you want to cancel Order #${order.displayOrderId}?`,
+      [
+        { text: "No", style: "cancel" },
+        {
+          text: "Yes, Cancel",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              setCancellingId(order.id);
+              await cancelOrder(numericId, null, order.contextId);
+              fetchOrders(); // Refresh list to reflect CANCELLED status
+            } catch (err) {
+              Alert.alert("Error", "Could not cancel the order at this time. Please try again later.");
+            } finally {
+              setCancellingId(null);
+            }
+          }
+        }
+      ]
+    );
+  };
+
+  /* ───────── helpers ───────── */
+
   const getStatusColor = (status) => {
-    switch (status.toLowerCase()) {
-      case 'delivered':
+    switch (status?.toUpperCase()) {
+      case 'COMPLETED':
+      case 'DELIVERED':
         return '#4CAF50';
-      case 'pending':
-        return '#FFC107';
-      case 'cancelled':
+      case 'CANCELLED':
         return '#F44336';
-      case 'in_progress':
-      case 'processing':
+      case 'PENDING':
+      case 'CREATED':
+        return '#FF9800';
+      case 'PICKUP':
+      case 'CONFIRMED':
+      case 'PROCESSING':
         return '#2196F3';
+      case 'DELIVERY':
+      case 'READY':
+        return '#9C27B0';
       default:
         return '#757575';
     }
   };
 
+  const getStatusLabel = (status) => {
+    if (!status) return 'Unknown';
+    const labels = {
+      PICKUP: 'Pickup Scheduled',
+      DELIVERY: 'Out for Delivery',
+      COMPLETED: 'Completed',
+      DELIVERED: 'Delivered',
+      CANCELLED: 'Cancelled',
+      PENDING: 'Pending',
+      CREATED: 'Order Placed',
+      PROCESSING: 'Processing',
+      CONFIRMED: 'Confirmed',
+      READY: 'Ready',
+    };
+    return (
+      labels[status.toUpperCase()] ||
+      status.charAt(0).toUpperCase() + status.slice(1).toLowerCase()
+    );
+  };
+
   const formatDate = (dateString) => {
     if (!dateString) return 'N/A';
     const date = new Date(dateString);
-    return date.toLocaleDateString('en-IN', { 
-      day: 'numeric', 
-      month: 'short', 
-      year: 'numeric' 
-    });
-  };
-
-  const formatDateTime = (dateString) => {
-    if (!dateString) return 'N/A';
-    const date = new Date(dateString);
-    return date.toLocaleString('en-IN', { 
-      day: 'numeric', 
-      month: 'short', 
+    if (isNaN(date.getTime())) return dateString; // return as-is for "2025-05-29 00:00" style
+    return date.toLocaleDateString('en-IN', {
+      day: 'numeric',
+      month: 'short',
       year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: true
     });
   };
 
-  const formatTimeRange = (startDateString, endDateString) => {
-    if (!startDateString || !endDateString) return 'N/A';
-    const startDate = new Date(startDateString);
-    const endDate = new Date(endDateString);
-    
-    const dateStr = startDate.toLocaleDateString('en-IN', { 
-      day: 'numeric', 
-      month: 'short', 
-      year: 'numeric' 
-    });
-    
-    const startTime = startDate.toLocaleTimeString('en-IN', { 
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: true 
-    });
-    
-    const endTime = endDate.toLocaleTimeString('en-IN', { 
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: true 
-    });
-    
-    return `${dateStr}, ${startTime} - ${endTime}`;
-  };
+  /* ───────── OrderItem card ───────── */
 
   const OrderItem = ({ order }) => {
-    // Helper function to render services list
-    const renderServices = (services) => {
-      if (!services || !Array.isArray(services)) return null;
-      
-      return (
-        <View style={styles.servicesContainer}>
-          {services.map((service, index) => (
-            <View key={`${service.id}-${index}`} style={styles.serviceItem}>
-              <Text style={styles.serviceName}>
-                • {service.name}
-              </Text>
-              {service.description && (
-                <Text style={styles.serviceDescription} numberOfLines={1}>
-                  {service.description}
-                </Text>
-              )}
-            </View>
-          ))}
-        </View>
-      );
-    };
+    const isCancellable = ['PENDING', 'CREATED', 'PICKUP'].includes(order.status?.toUpperCase());
+    const isCancelling = cancellingId === order.id;
 
     return (
       <View style={styles.orderCard}>
+        {/* Header: Order ID + Status */}
         <View style={styles.orderHeader}>
-          <View>
-            <Text style={styles.orderNumber}>Order #{order.orderId}</Text>
-            <Text style={styles.orderDate}>{formatDate(order.createdAt)}</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.orderNumber}>Order #{order.displayOrderId}</Text>
+            <Text style={styles.orderDate}>{formatDate(order.orderDate)}</Text>
           </View>
-          <View style={[styles.statusBadge, { backgroundColor: getStatusColor(order.status) }]} >
-            <Text style={styles.statusText}>{order.status.charAt(0).toUpperCase() + order.status.slice(1)}</Text>
+          <View style={[styles.statusBadge, { backgroundColor: getStatusColor(order.status) }]}>
+            <Text style={styles.statusText}>{getStatusLabel(order.status)}</Text>
           </View>
         </View>
-        
-        <View style={styles.orderContent}>
-          <View style={styles.serviceInfo}>
-            {order.storeName && (
-              <Text style={styles.storeName}>{order.storeName}</Text>
-            )}
-            {renderServices(order.services || [])}
-          </View>
-          
-          {order.pickupSlot && (
-            <View style={styles.scheduleInfo}>
-              <Ionicons name="time-outline" size={14} color={colors.primaryText} />
-              <Text style={styles.scheduleText}>
-                Pickup: {formatTimeRange(order.pickupSlot.start, order.pickupSlot.end)}
-              </Text>
+
+        {/* Store name */}
+        {!!order.storeName && (
+          <Text style={styles.storeName}>{order.storeName}</Text>
+        )}
+
+        {/* Meta chips: pieces / due date / supply date */}
+        <View style={styles.metaRow}>
+          {order.pieces > 0 && (
+            <View style={styles.metaChip}>
+              <Ionicons name="shirt-outline" size={13} color={colors.secondaryText} />
+              <Text style={styles.metaChipText}>{order.pieces} pcs</Text>
             </View>
           )}
-
-          {/* Total Amount */}
-          <View style={styles.totalRow}>
-            <Text style={styles.totalLabel}>Total</Text>
-            <Text style={styles.totalValue}>₹{getOrderTotal(order).toFixed(2)}</Text>
-          </View>
+          {!!order.dueDate && (
+            <View style={styles.metaChip}>
+              <Ionicons name="calendar-outline" size={13} color={colors.secondaryText} />
+              <Text style={styles.metaChipText}>Due: {formatDate(order.dueDate)}</Text>
+            </View>
+          )}
+          {!!order.supplyDate && (
+            <View style={styles.metaChip}>
+              <Ionicons name="time-outline" size={13} color={colors.secondaryText} />
+              <Text style={styles.metaChipText}>Supply: {formatDate(order.supplyDate)}</Text>
+            </View>
+          )}
         </View>
+
+        {/* Action Row */}
+        {isCancellable && (
+          <View style={{ alignItems: 'flex-end', marginTop: 4, marginBottom: 8 }}>
+            <TouchableOpacity
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                backgroundColor: '#FFF0F0',
+                paddingHorizontal: 12,
+                paddingVertical: 6,
+                borderRadius: 6,
+                borderWidth: 1,
+                borderColor: '#FFCDD2'
+              }}
+              onPress={() => handleCancelOrder(order)}
+              disabled={isCancelling}
+            >
+              {isCancelling ? (
+                <ActivityIndicator size="small" color="#F44336" style={{ marginRight: 6 }} />
+              ) : (
+                <Ionicons name="close-circle-outline" size={14} color="#F44336" style={{ marginRight: 4 }} />
+              )}
+              <Text style={{ fontSize: 12, fontWeight: '600', color: '#F44336' }}>
+                {isCancelling ? "Cancelling..." : "Cancel Order"}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {/* Totals row — only show once the order has been paid */}
+        {order.invoiceStatus?.toUpperCase() !== 'UNPAID' && (
+          <View style={styles.totalsRow}>
+            <View>
+              <Text style={styles.totalLabel}>Invoice Total</Text>
+              <Text style={styles.totalValue}>₹{order.total.toFixed(2)}</Text>
+            </View>
+            {order.balance > 0 && (
+              <View style={{ alignItems: 'flex-end' }}>
+                <Text style={styles.totalLabel}>Balance Due</Text>
+                <Text style={[styles.totalValue, { color: '#F44336' }]}>
+                  ₹{order.balance.toFixed(2)}
+                </Text>
+              </View>
+            )}
+            {!!order.invoiceStatus && (
+              <View
+                style={[
+                  styles.paymentBadge,
+                  {
+                    backgroundColor: '#E8F5E9',
+                  },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.paymentBadgeText,
+                    {
+                      color: '#2E7D32',
+                    },
+                  ]}
+                >
+                  {order.invoiceStatus}
+                </Text>
+              </View>
+            )}
+          </View>
+        )}
       </View>
     );
   };
+
+  /* ───────── render states ───────── */
 
   if (loading) {
     return (
@@ -226,7 +325,7 @@ const OrdersScreen = () => {
     <SafeAreaView style={styles.container}>
       <FlatList
         data={orders}
-        keyExtractor={(item) => item.orderId.toString()}
+        keyExtractor={(item) => (item.id ?? item.displayOrderId)?.toString()}
         renderItem={({ item }) => <OrderItem order={item} />}
         contentContainerStyle={styles.listContent}
         showsVerticalScrollIndicator={false}
@@ -250,12 +349,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#FBEFE7',
     padding: 16,
   },
-  heading: {
-    fontSize: 24,
-    fontWeight: '600',
-    color: colors.primaryText,
-    marginBottom: 20,
-  },
   listContent: {
     paddingBottom: 20,
   },
@@ -268,19 +361,19 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.05,
     shadowRadius: 8,
-    elevation: 1,
+    elevation: 2,
   },
   orderHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
-    marginBottom: 12,
+    marginBottom: 6,
   },
   orderNumber: {
     fontSize: 14,
-    fontWeight: '600',
+    fontWeight: '700',
     color: colors.primaryText,
-    marginBottom: 4,
+    marginBottom: 2,
   },
   orderDate: {
     fontSize: 12,
@@ -290,75 +383,65 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   statusText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#fff',
+  },
+  storeName: {
     fontSize: 12,
-    fontWeight: '500',
-  },
-  itemsContainer: {
-    marginTop: 8,
-  },
-  servicesTitle: {
-    fontSize: 13,
     color: colors.secondaryText,
     marginBottom: 6,
-    fontWeight: '500',
   },
-  itemRow: {
+  metaRow: {
     flexDirection: 'row',
-    marginBottom: 4,
+    flexWrap: 'wrap',
+    gap: 6,
+    marginBottom: 8,
   },
-  itemInfo: {
-    flex: 1,
+  metaChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F5F5F5',
+    borderRadius: 12,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    gap: 4,
   },
-  itemName: {
-    fontSize: 13,
-    color: colors.primaryText,
-  },
-  itemQuantity: {
+  metaChipText: {
     fontSize: 12,
-    color: colors.secondaryText,
+    color: '#616161',
   },
-  itemPrice: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: colors.primaryText,
-  },
-  divider: {
-    height: 1,
-    backgroundColor: '#F0F0F0',
-    marginVertical: 12,
-  },
-  orderFooter: {
+  totalsRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-  },
-  deliveryInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-    marginRight: 12,
-  },
-  deliveryText: {
-    fontSize: 12,
-    color: colors.secondaryText,
-    marginLeft: 6,
-    flex: 1,
-  },
-  totalContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    marginTop: 8,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: '#F0F0F0',
   },
   totalLabel: {
-    fontSize: 12,
+    fontSize: 11,
     color: colors.secondaryText,
-    marginRight: 6,
+    marginBottom: 2,
   },
-  totalAmount: {
-    fontSize: 16,
-    fontWeight: '600',
+  totalValue: {
+    fontSize: 15,
+    fontWeight: '700',
     color: colors.primaryText,
+  },
+  paymentBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  paymentBadgeText: {
+    fontSize: 12,
+    fontWeight: '600',
   },
   loadingContainer: {
     flex: 1,
@@ -412,50 +495,6 @@ const styles = StyleSheet.create({
     color: colors.secondaryText,
     textAlign: 'center',
   },
-  orderContent: {
-    marginTop: 12,
-  },
-  servicesContainer: {
-    marginTop: 8,
-    marginBottom: 4,
-  },
-  serviceItem: {
-    marginBottom: 6,
-  },
-  serviceName: {
-    fontSize: 15,
-    color: colors.primaryText,
-    fontWeight: '500',
-  },
-  serviceDescription: {
-    fontSize: 12,
-    color: colors.secondaryText,
-    marginLeft: 12,
-    marginTop: 2,
-  },
-  serviceInfo: {
-    marginBottom: 8,
-  },
-  serviceName: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: colors.primaryText,
-    marginBottom: 2,
-  },
-  storeName: {
-    fontSize: 12,
-    color: colors.secondaryText,
-  },
-  scheduleInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  scheduleText: {
-    fontSize: 12,
-    color: colors.secondaryText,
-    marginLeft: 4,
-  },
 });
 
 export default OrdersScreen;
-

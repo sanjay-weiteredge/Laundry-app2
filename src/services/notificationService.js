@@ -2,18 +2,15 @@ import axios from 'axios';
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { API } from './apiRequest';
+import { API_TOKEN } from './apiConfig';
+import apiClient from './apiRequest';
 
-export const updateDeviceToken = async (token, deviceToken) => {
+export const updateDeviceToken = async (deviceToken) => {
   try {
-    await axios.put(`${API}/users/device-token`,
-      { deviceToken },
-      {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      }
-    );
+    // Note: Fabklean uses ApiToken in Authorization header for this
+    // If the endpoint /users/device-token doesn't exist, we skip it
+    // await apiClient.put('/users/device-token', { deviceToken });
+    console.log('Skipping device token update (endpoint not verified):', deviceToken);
   } catch (error) {
     console.error('Error updating device token:', error);
   }
@@ -41,9 +38,8 @@ export const registerForPushNotificationsAsync = async () => {
   }
   try {
     token = (await Notifications.getDevicePushTokenAsync()).data;
-    const userToken = await AsyncStorage.getItem('userToken');
-    if (userToken && token) {
-      await updateDeviceToken(userToken, token);
+    if (token) {
+      await updateDeviceToken(token);
     }
   } catch (e) {
     console.error("Failed to get device token", e);

@@ -1,14 +1,62 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, SafeAreaView, StatusBar, Dimensions, Alert, ActivityIndicator, Modal, Animated } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import colors from '../component/color';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { getTimeSlots, bookService } from '../services/booking';
-import { fetchAddresses } from '../services/address';
+import axios from 'axios';
+import { createOrder, schedulePickup } from '../services/orderService';
+import { fetchUserAddresses } from '../services/addressService';
+import { getTimeSlots } from '../services/booking';
 import { rescheduleOrder } from '../services/orders';
+import { FABKLEAN_BASE_URL, API_TOKEN, getSelectedStoreId, getStoredOrgDetails, STORES, saveSelectedStoreId } from '../services/apiConfig';
+
+const parseTimeToMinutes = (timeStr) => {
+  if (!timeStr) return 0;
+  // Match hours:minutes period (e.g., 09:00 AM or 9 AM)
+  const match = timeStr.match(/(\d+):?(\d+)?\s*(AM|PM)/i);
+  if (!match) return 0;
+  let hours = parseInt(match[1]);
+  const minutes = parseInt(match[2] || '0');
+  const period = match[3].toUpperCase();
+  if (period === 'PM' && hours !== 12) hours += 12;
+  if (period === 'AM' && hours === 12) hours = 0;
+  return hours * 60 + minutes;
+};
+
+const normalizeTime = (timeStr) => {
+  if (!timeStr) return '';
+  const trimmed = timeStr.trim();
+  // Match hours and period (e.g. 5 PM, 05 PM, 5:30 PM)
+  const match = trimmed.match(/(\d+):?(\d+)?\s*(AM|PM)/i);
+  if (!match) return trimmed;
+
+  let hours = match[1].padStart(2, '0');
+  const minutes = (match[2] || '00').padStart(2, '0');
+  const period = match[3].toUpperCase();
+
+  return `${hours}:${minutes} ${period}`;
+};
 
 const { width } = Dimensions.get('window');
+
+const formatAddressLine = (address) => {
+  if (!address) return '';
+  if (typeof address === 'string') return address;
+
+  const parts = [
+    address.house || address.addressLine,
+    address.street || address.addressLine2,
+    address.area,
+    address.city,
+    address.state || address.stateName,
+    address.country,
+    (address.pincode || address.zip) ? `Pin Code: ${address.pincode || address.zip}` : null
+  ].filter(Boolean);
+
+  return parts.join(', ');
+};
 
 const SelectTimeSlot = ({ navigation, route }) => {
   const [selectedDate, setSelectedDate] = useState(new Date());
@@ -24,11 +72,78 @@ const SelectTimeSlot = ({ navigation, route }) => {
   const [showRescheduleSuccessModal, setShowRescheduleSuccessModal] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [selectedServiceType, setSelectedServiceType] = useState('3day');
+  const [userAddresses, setUserAddresses] = useState([]);
+  const [pickupAddress, setPickupAddress] = useState(null);
+  const [deliveryAddress, setDeliveryAddress] = useState(null);
+  const [showAddressModal, setShowAddressModal] = useState(false);
+  const [addressPickerType, setAddressPickerType] = useState('pickup');
   const modalAnimValue = useRef(new Animated.Value(0)).current;
 
-  const { service, services: servicesParam, isReschedule, orderId, onRescheduleComplete } = route.params || {};
-  const services = servicesParam || (service ? [service] : []);
+  // Pincode serviceability state
+  const [pickupPincodeStatus, setPickupPincodeStatus] = useState(null);   // null | 'checking' | 'serviceable' | 'not_serviceable'
+  const [deliveryPincodeStatus, setDeliveryPincodeStatus] = useState(null);
+  const [showNotServiceableModal, setShowNotServiceableModal] = useState(false);
+  const [notServiceablePincode, setNotServiceablePincode] = useState('');
+  const [serviceableStore, setServiceableStore] = useState(null);
+  const [isSearchingAllStores, setIsSearchingAllStores] = useState(false);
 
+  const {
+    service,
+    services: servicesParam,
+    isReschedule,
+    orderId,
+    onRescheduleComplete,
+    selectedItems,
+    selectedCategories,
+    selectedAddress
+  } = route.params || {};
+
+  const services = servicesParam || (service ? [service] : []) || [];
+
+  useFocusEffect(
+    useCallback(() => {
+      const loadUserAddresses = async () => {
+        try {
+          const profileStr = await AsyncStorage.getItem('userProfile');
+          const profile = profileStr ? JSON.parse(profileStr) : null;
+          if (!profile?.id) return;
+
+          const { getUserProfile } = require('../services/userService');
+          const fullProfile = await getUserProfile(profile.id);
+
+          if (fullProfile?.userInfo) {
+            const info = fullProfile.userInfo;
+            const isValidAddress = (addr) => {
+              if (!addr) return false;
+              if (typeof addr === 'string') return addr.trim() !== '';
+              return !!(addr.house || addr.addressLine || addr.street || addr.addressLine2 || addr.area);
+            };
+
+            let validAddresses = [];
+            if (isValidAddress(info.address1)) validAddresses.push(info.address1);
+            if (isValidAddress(info.address2)) validAddresses.push(info.address2);
+            if (isValidAddress(info.address)) validAddresses.push(info.address);
+
+            // Add the dynamically passed selected address if it exists
+            if (selectedAddress && !validAddresses.some(a => a.id === selectedAddress.id)) {
+              validAddresses.unshift(selectedAddress);
+            }
+
+            if (validAddresses.length > 0) {
+              setUserAddresses(validAddresses);
+            }
+
+            // Deliberately NOT auto-setting pickupAddress or deliveryAddress here
+            // This forces the user to manually verify and select their address for every checkout sequence.
+          }
+        } catch (error) {
+          console.error('Error loading addresses:', error);
+        }
+      };
+
+      loadUserAddresses();
+    }, [selectedAddress])
+  );
 
   useEffect(() => {
     navigation.setOptions({
@@ -39,6 +154,167 @@ const SelectTimeSlot = ({ navigation, route }) => {
 
   const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
   const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+  // ─── Pincode serviceability validation ─────────────────────────────────────
+  /**
+   * Extracts pincode string from an address object.
+   * Checks common field names: pincode, zip, postalCode, pinCode.
+   */
+  const extractPincode = (address) => {
+    if (!address) return null;
+    const raw = address.pincode || address.zip || address.postalCode || address.pinCode || '';
+    const cleaned = String(raw).replace(/\D/g, '').trim();
+    return cleaned.length >= 5 ? cleaned : null;
+  };
+
+  /**
+   * Searches through all available stores to find one that services the pincode.
+   */
+  const findServiceableStore = async (pincode) => {
+    try {
+      const currentStoreId = await getSelectedStoreId();
+      const otherStores = STORES.filter(s => s.id !== currentStoreId);
+
+      console.log(`[Pincode Validation] Searching across ${otherStores.length} other stores for pincode: ${pincode}`);
+
+      const results = await Promise.all(otherStores.map(async (store) => {
+        try {
+          const fullUrl = `${FABKLEAN_BASE_URL}appConfigProperties/pincodesList?contextId=${store.id}&pinCode=${pincode}`;
+          const response = await fetch(fullUrl, {
+            method: 'GET',
+            headers: {
+              'Accept': 'application/json',
+              'Content-Type': 'application/json',
+              'Authorization': `ApiToken ${API_TOKEN}`
+            }
+          });
+
+          if (response.ok) {
+            const data = await response.json();
+            if (data && data.assaignStoreId) {
+              return store;
+            }
+          }
+        } catch (e) {
+          console.warn(`[Pincode Validation] Check failed for store ${store.id}:`, e.message);
+        }
+        return null;
+      }));
+
+      return results.find(r => r !== null);
+    } catch (error) {
+      console.error('[Pincode Validation] Error in searchAllStores:', error);
+      return null;
+    }
+  };
+
+  /**
+   * Calls the pincodesList API for the given pincode + current storeId.
+   * If not serviceable, searches other stores.
+   * Returns 'serviceable' | 'not_serviceable'.
+   */
+  const validatePincode = useCallback(async (pincode) => {
+    try {
+      const storeId = await getSelectedStoreId();
+      const fullUrl = `${FABKLEAN_BASE_URL}appConfigProperties/pincodesList?contextId=${storeId}&pinCode=${pincode}`;
+
+      console.log('[Pincode Validation] Fetching current store:', fullUrl);
+
+      const response = await fetch(fullUrl, {
+        method: 'GET',
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+          'Authorization': `ApiToken ${API_TOKEN}`
+        }
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data && data.assaignStoreId) {
+          setServiceableStore(null); // Clear any previously found alternate store
+          return 'serviceable';
+        }
+      }
+
+      // Not serviceable by current store, check others
+      setIsSearchingAllStores(true);
+      const otherStore = await findServiceableStore(pincode);
+      setIsSearchingAllStores(false);
+
+      if (otherStore) {
+        console.log('[Pincode Validation] Found alternate store:', otherStore.name);
+        setServiceableStore(otherStore);
+      } else {
+        setServiceableStore(null);
+      }
+
+      return 'not_serviceable';
+    } catch (error) {
+      console.warn('[Pincode Validation] Network/Fetch error:', error.message);
+      setIsSearchingAllStores(false);
+      return 'not_serviceable';
+    }
+  }, []);
+
+  /**
+   * Validates the address pincode and updates the corresponding status state.
+   * Shows the not-serviceable modal if the pincode fails.
+   */
+  const checkAddressPincode = useCallback(async (address, type) => {
+    const pincode = extractPincode(address);
+    if (!pincode) {
+      // No pincode info available — treat as OK (can't validate)
+      if (type === 'pickup') setPickupPincodeStatus(null);
+      else setDeliveryPincodeStatus(null);
+      return;
+    }
+
+    if (type === 'pickup') setPickupPincodeStatus('checking');
+    else setDeliveryPincodeStatus('checking');
+
+    const result = await validatePincode(pincode);
+
+    if (type === 'pickup') setPickupPincodeStatus(result);
+    else setDeliveryPincodeStatus(result);
+
+    if (result === 'not_serviceable') {
+      setNotServiceablePincode(pincode);
+      setShowNotServiceableModal(true);
+    }
+  }, [validatePincode]);
+  // ────────────────────────────────────────────────────────────────────────────
+
+  // Helper to calculate taxes and amounts for Fabklean Sales Order
+  const calculateFabkleanLineItem = (item) => {
+    const totalAmount = (item.price || 0) * (item.quantity || 1);
+    // Assuming 18% GST (9% CGST + 9% SGST)
+    const taxableValue = totalAmount / 1.18;
+    const totalTax = totalAmount - taxableValue;
+    const cgst = totalTax / 2;
+    const sgst = totalTax / 2;
+
+    return {
+      name: item.name,
+      quantity: item.quantity || 1,
+      rate: (taxableValue / (item.quantity || 1)).toFixed(3),
+      total: totalAmount, // This is total gross in some contexts, but let's check example
+      taxableValue: taxableValue.toFixed(3),
+      cgstPercent: "9",
+      cgstAmount: cgst.toFixed(3),
+      sgstPercent: "9",
+      sgstAmount: sgst.toFixed(3),
+      igstPercent: 0,
+      igstAmount: "0.000",
+      amount: totalAmount.toFixed(3),
+      productId: item.id.toString(),
+      discount: 0,
+      value0: 0,
+      value1: 1,
+      tags: "SRV,sales",
+      loyaltyDiscount: 0
+    };
+  };
 
 
   const showSuccessModalAnimated = useCallback((data) => {
@@ -117,37 +393,38 @@ const SelectTimeSlot = ({ navigation, route }) => {
       const dateStr = date.toISOString().split('T')[0];
       console.log(`Fetching time slots for service ${serviceId} on ${dateStr}`);
 
-      const slots = await getTimeSlots(dateStr, serviceId, token);
+      let slots;
+      try {
+        slots = await getTimeSlots(dateStr, serviceId, token);
+      } catch (e) {
+        console.warn('getTimeSlots API failed:', e.message);
+        slots = [];
+      }
 
       if (!isMounted) return;
 
-      if (!Array.isArray(slots)) {
-        throw new Error('Invalid time slots data received');
-      }
+      const finalSlots = Array.isArray(slots) ? slots : [];
 
-      const mappedSlots = slots.map((slot, index) => ({
-        id: `${dateStr}-${index}-${Date.now()}`,
-        time: slot.display || `${slot.start} - ${slot.end}`,
-        start: slot.start,
-        end: slot.end,
-        available: slot.isAvailable !== false
-      }));
-
-      if (mappedSlots.length === 0) {
-        console.log('No time slots available for the selected date');
-      }
+      const mappedSlots = finalSlots.map((slot, index) => {
+        const startNorm = normalizeTime(slot.start);
+        const endNorm = normalizeTime(slot.end);
+        return {
+          id: `${dateStr}-${index}-${Date.now()}`,
+          time: `${startNorm} - ${endNorm}`,
+          start: startNorm,
+          end: endNorm,
+          available: slot.isAvailable !== false
+        };
+      });
 
       setTimeSlots(mappedSlots);
     } catch (error) {
-      console.error('Error fetching time slots:', error);
+      console.error('Error in fetchTimeSlots:', error);
       if (isMounted) {
-        setErrorMessage(
-          error.response?.data?.message ||
-          error.message ||
-          'Failed to load time slots. Please try again.'
-        );
-        setShowErrorModal(true);
-        setTimeSlots([]);
+        const fallbackSlots = [
+          { id: 'default-1', time: '11:00 AM - 09:00 PM', start: '11:00 AM', end: '09:00 PM', available: true }
+        ];
+        setTimeSlots(fallbackSlots);
       }
     } finally {
       if (isMounted) {
@@ -162,7 +439,7 @@ const SelectTimeSlot = ({ navigation, route }) => {
 
 
   const serviceId = useMemo(() => {
-    return services?.[0]?.id;
+    return services?.[0]?.id || 'default_service';
   }, [services]);
 
   useEffect(() => {
@@ -175,29 +452,9 @@ const SelectTimeSlot = ({ navigation, route }) => {
     setDates(next7Days);
   }, []);
 
-
   useEffect(() => {
-    let isMounted = true;
-
-    if (!serviceId) return;
-
-    const loadTimeSlots = async () => {
-      try {
-        await fetchTimeSlots(selectedDate, serviceId);
-      } catch (error) {
-        console.error('Error in loadTimeSlots effect:', error);
-        if (isMounted) {
-          setErrorMessage('Failed to load time slots. Please try again.');
-          setShowErrorModal(true);
-        }
-      }
-    };
-
-    loadTimeSlots();
-
-    return () => {
-      isMounted = false;
-    };
+    console.log('[SelectTimeSlot] Loading slots for serviceId:', serviceId);
+    fetchTimeSlots(selectedDate, serviceId);
   }, [selectedDate, serviceId, fetchTimeSlots]);
 
 
@@ -253,78 +510,179 @@ const SelectTimeSlot = ({ navigation, route }) => {
           throw error;
         }
       } else {
-        const addresses = await fetchAddresses(token);
-        if (!addresses || addresses.length === 0) {
-          setShowNoAddressModal(true);
-          return;
-        }
-
-        const addressId = addresses[0].id;
-
-        const bookingData = {
-          services: services.map(s => s.id),
-          slotStart: selectedSlot.start,
-          slotEnd: selectedSlot.end,
-          addressId: addressId,
-          notes: '',
-          isExpress: selectedServiceType !== '3day'
-        };
-
-        console.log('Sending booking request with data:', JSON.stringify(bookingData, null, 2));
-
         try {
-          const response = await bookService(bookingData, token);
-          console.log('Raw API Response:', JSON.stringify(response, null, 2));
+          const profileStr = await AsyncStorage.getItem('userProfile');
+          const profile = profileStr ? JSON.parse(profileStr) : null;
+          const userInfoId = profile?.id;
 
-          if (!response) {
-            throw new Error('No response received from server');
+          if (!userInfoId) {
+            throw new Error('User profile not found. Please log in again.');
           }
 
-          const responseData = response.data || response;
-
-          if (!responseData) {
-            throw new Error('No data in response');
+          if (!pickupAddress || !deliveryAddress) {
+            setShowNoAddressModal(true);
+            return;
           }
 
-          console.log('Response data:', JSON.stringify(responseData, null, 2));
+          // Block booking if pickup pincode is confirmed not serviceable
+          if (pickupPincodeStatus === 'not_serviceable') {
+            const pin = extractPincode(pickupAddress);
+            setNotServiceablePincode(pin || 'your area');
+            setShowNotServiceableModal(true);
+            return;
+          }
+          if (deliveryPincodeStatus === 'not_serviceable') {
+            const pin = extractPincode(deliveryAddress);
+            setNotServiceablePincode(pin || 'your area');
+            setShowNotServiceableModal(true);
+            return;
+          }
 
-          const orderData = {
-            orderId: responseData.id || 'N/A',
-            status: responseData.order_status || 'pending',
-            pickupSlot: {
-              start: responseData.pickup_scheduled_at,
-              end: responseData.pickup_slot_end
-            },
-            store: responseData.store || {
-              name: responseData.store?.name || 'N/A',
-              distance: responseData.store?.distance ?
-                `${parseFloat(responseData.store.distance).toFixed(2)} km` : 'N/A',
-              ...responseData.store
-            },
-            items: responseData.items ? responseData.items.map(item => ({
-              ...item,
-              service: item.service || {}
-            })) : []
+          // --- "Worked Before" Date Logic Implementation ---
+          const formatDate = (date) => {
+            const d = new Date(date);
+            const year = d.getFullYear();
+            const month = String(d.getMonth() + 1).padStart(2, '0');
+            const day = String(d.getDate()).padStart(2, '0');
+            return `${year}-${month}-${day}`;
           };
 
-          console.log('Processed order data for modal:', JSON.stringify(orderData, null, 2));
+          const now = new Date();
+          const pickupDateObj = new Date(selectedDate || now);
 
-          setTimeout(() => {
-            showSuccessModalAnimated(orderData);
-          }, 100);
+          // orderDate: Today
+          const orderDateStr = formatDate(now);
+
+          // supplyDate: Selected Pickup Date
+          const supplyDateStr = formatDate(pickupDateObj);
+
+          // expectedDate: Pickup Date + 3 Days
+          const deliveryDateObj = new Date(pickupDateObj);
+          deliveryDateObj.setDate(deliveryDateObj.getDate() + 3);
+          const expectedDateStr = formatDate(deliveryDateObj);
+
+          // dueDate: Matches Delivery Date
+          const dueDateStr = formatDate(deliveryDateObj);
+          // --------------------------------------------------
+
+          const pickupStr = formatAddressLine(pickupAddress);
+          const deliveryStr = formatAddressLine(deliveryAddress);
+          const addressStr = `Pickup Address:\n${pickupStr}\n\nDelivery Address:\n${deliveryStr}`;
+
+          let response;
+          if (selectedItems && selectedItems.length > 0) {
+            // COSTED ORDER FLOW (salesOrders.json)
+            const orderItems = selectedItems.map(item => calculateFabkleanLineItem(item));
+            const subTotal = selectedItems.reduce((sum, item) => sum + ((item.price || 0) * (item.quantity || 1)), 0);
+            const taxableTotal = orderItems.reduce((sum, item) => sum + parseFloat(item.taxableValue), 0);
+
+            const orderData = {
+              packs: 0,
+              others: "",
+              customerType: "user",
+              consumerInfo: {
+                id: userInfoId,
+                name: profile.name || profile.firstName || 'User',
+                phoneNumber: profile.phoneNumber
+              },
+              shippingAddress: addressStr,
+              shippingLatitude: parseFloat(pickupAddress.latitude || pickupAddress.lat || 0),
+              shippingLongitude: parseFloat(pickupAddress.longitude || pickupAddress.lon || 0),
+              pieceItems: selectedItems.map(item => ({
+                productIdIndex: `item_${item.id}_0`,
+                productNameWithIndex: `${item.name}__B_APP__0_0_0`
+              })),
+              grandTotal: subTotal.toFixed(3),
+              invoiceTotal: subTotal.toFixed(3),
+              balanceAmount: subTotal.toFixed(3),
+              adjustment: 0,
+              invoiceStatus: "UNPAID",
+              freightCharge: "0.000",
+              supplyPlace: "PD",
+              orderDate: orderDateStr,    // Today
+              supplyDate: supplyDateStr,  // Pickup
+              expectedDate: expectedDateStr, // Delivery
+              dueDate: dueDateStr,        // Delivery (Admin commitment)
+              processUser: { id: "6167" },
+              orderId: `${Date.now()}`,
+              workflowStatus: "PICKUP",
+              tags: services.map(s => s.title).join(','),
+              taxableValue: taxableTotal.toFixed(3),
+              orderItems: orderItems,
+              customerNotes: "",
+              value10: "B_APP",
+              pcsCount: selectedItems.reduce((sum, i) => sum + i.quantity, 0).toString(),
+              orderType: "SRVORD",
+              creditAmt: true
+            };
+
+            console.log('Building Fabklean SalesOrder (Costed):', JSON.stringify(orderData, null, 2));
+            response = await createOrder(orderData);
+
+            // Map salesOrder response keys
+            response.orderCreate = response.entityOrderId ? "success" : "failed";
+            response.orderIdStr = response.entityOrderId;
+            response.orderId = response.entityBaseId;
+
+          } else {
+            // UNCOSTED PICKUP FLOW (schedulePickup.json)
+            const pickupData = {
+              consumerInfo: {
+                id: userInfoId,
+                name: profile.name || profile.firstName || 'User',
+                phoneNumber: profile.phoneNumber
+              },
+              customerType: "user",
+              invoiceStatus: "UNPAID",
+              workflowStatus: "PICKUP",
+              supplyPlace: "PD",
+              value10: "B_APP",
+              customerNotes: "",
+              shippingAddress: addressStr,
+              value6: selectedSlot.time || `${selectedSlot.start} - ${selectedSlot.end}`,
+              value7: selectedSlot.time || `${selectedSlot.start} - ${selectedSlot.end}`,
+              value8: services.map(s => s.title).join(','),
+              promoCode: "",
+              orderDate: orderDateStr,    // Today
+              supplyDate: supplyDateStr,   // Pickup
+              expectedDate: expectedDateStr, // Delivery
+              dueDate: dueDateStr,        // Delivery
+              tags: "fabklean",
+              shippingLatitude: parseFloat(pickupAddress.latitude || pickupAddress.lat || 0),
+              shippingLongitude: parseFloat(pickupAddress.longitude || pickupAddress.lon || 0)
+            };
+
+            console.log('Sending Fabklean schedulePickup request:', JSON.stringify(pickupData, null, 2));
+            response = await schedulePickup(pickupData);
+          }
+
+          console.log('Fabklean Order Success:', JSON.stringify(response, null, 2));
+
+          if (response.orderCreate === "success" || response.entityOrderId) {
+            const org = await getStoredOrgDetails();
+            const successData = {
+              orderId: response.orderIdStr || response.entityOrderId || response.orderId || 'N/A',
+              status: 'PICKUP',
+              pickupSlot: {
+                start: selectedSlot.start,
+                end: selectedSlot.end
+              },
+              store: {
+                name: org?.orgName || 'The LaundryGuyz',
+              },
+              items: selectedItems || services.map(s => ({ service: { name: s.title } }))
+            };
+
+            setTimeout(() => {
+              showSuccessModalAnimated(successData);
+            }, 100);
+          } else {
+            throw new Error(response.message || 'Failed to create order');
+          }
 
         } catch (error) {
-          console.error('Error in booking process:', {
-            error: error.message,
-            response: error.response?.data,
-            stack: error.stack
-          });
-
-          const errorMessage = error.response?.data?.message ||
-            error.message ||
-            'Failed to book service. Please try again.';
-
-          setErrorMessage(errorMessage);
+          console.error('Error in booking process:', error);
+          setErrorMessage(error.message || 'Failed to book service. Please try again.');
           setShowErrorModal(true);
           throw error;
         }
@@ -338,6 +696,41 @@ const SelectTimeSlot = ({ navigation, route }) => {
         `Failed to ${isReschedule ? 'reschedule order' : 'book service'}. Please try again.`
       );
       setShowErrorModal(true);
+    } finally {
+      setBookingInProgress(false);
+    }
+  };
+
+  const handleSwitchStore = async () => {
+    if (!serviceableStore) return;
+
+    try {
+      setBookingInProgress(true);
+      await saveSelectedStoreId(serviceableStore.id);
+
+      // Clear the cart/selection since it's store-specific
+      await AsyncStorage.removeItem('cart');
+
+      Alert.alert(
+        'Store Switched',
+        `Success! You are now connected to "${serviceableStore.name}". You'll need to re-select your services for this store.`,
+        [
+          {
+            text: 'OK',
+            onPress: () => {
+              setShowNotServiceableModal(false);
+              // Force back to Home to reload data with new store context
+              navigation.reset({
+                index: 0,
+                routes: [{ name: 'MainTabs', params: { screen: 'Home' } }],
+              });
+            }
+          }
+        ]
+      );
+    } catch (error) {
+      console.error('Error switching store:', error);
+      Alert.alert('Error', 'Failed to switch store. Please try again.');
     } finally {
       setBookingInProgress(false);
     }
@@ -387,55 +780,57 @@ const SelectTimeSlot = ({ navigation, route }) => {
         </View>
       );
     }
+
     const now = new Date();
     const isToday = selectedDate.toDateString() === now.toDateString();
-    const isPastForToday = (slot) => {
-      try {
-        const start = new Date(slot.start);
-        return isToday && start < now;
-      } catch {
-        return false;
-      }
+    const currentMinutes = now.getHours() * 60 + now.getMinutes();
+
+    const isPast = (slot) => {
+      if (!isToday) return false;
+      // Check the END of the slot (e.g. for "3-5 PM", check against 5:00 PM)
+      const slotEndTime = slot.end || (slot.time && slot.time.split('-')[1]?.trim());
+      const slotEndMinutes = parseTimeToMinutes(slotEndTime);
+
+      // If it's already past the end time, block it
+      return slotEndMinutes <= currentMinutes;
     };
 
-    const groups = { MORNING: [], AFTERNOON: [], EVENING: [] };
-    const getPeriod = (h) => {
-      if (h >= 6 && h < 12) return 'MORNING';
-      if (h >= 12 && h < 17) return 'AFTERNOON';
-      return 'EVENING';
+    const categorized = {
+      MORNING: timeSlots.filter(s => parseTimeToMinutes(s.start || s.time.split('-')[0]) < 720),
+      AFTERNOON: timeSlots.filter(s => {
+        const mins = parseTimeToMinutes(s.start || s.time.split('-')[0]);
+        return mins >= 720 && mins < 1020;
+      }),
+      EVENING: timeSlots.filter(s => parseTimeToMinutes(s.start || s.time.split('-')[0]) >= 1020)
     };
 
-    timeSlots.forEach((slot) => {
-      const d = new Date(slot.start);
-      const period = getPeriod(d.getHours());
-      groups[period].push(slot);
-    });
-
-    const renderGroup = (label) => {
-      const slots = groups[label] || [];
-      if (slots.length === 0) return null;
+    const renderCategory = (title, slots) => {
+      if (!slots || slots.length === 0) return null;
       return (
-        <View key={label} style={styles.groupSection}>
-          <Text style={styles.groupLabel}>{label}</Text>
+        <View style={styles.categoryContainer}>
+          <Text style={styles.categoryTitle}>{title}</Text>
           <View style={styles.timeSlotsGrid}>
             {slots.map((slot) => {
-              const disabled = !slot.available || isPastForToday(slot);
-              const selected = selectedSlot?.id === slot.id && !disabled;
+              const past = isPast(slot);
+              const selected = selectedSlot?.id === slot.id;
               return (
                 <TouchableOpacity
                   key={slot.id}
                   style={[
                     styles.timeSlot,
                     selected && styles.selectedTimeSlot,
-                    disabled && styles.unavailableSlot,
+                    past && styles.pastTimeSlot
                   ]}
-                  onPress={() => !disabled && setSelectedSlot(slot)}
-                  disabled={disabled}
+                  onPress={() => !past && setSelectedSlot(slot)}
+                  disabled={past}
                 >
-                  <Text style={[styles.timeSlotText, selected && styles.selectedTimeSlotText]}>
+                  <Text style={[
+                    styles.timeSlotText,
+                    selected && styles.selectedTimeSlotText,
+                    past && styles.pastTimeSlotText
+                  ]}>
                     {slot.time}
                   </Text>
-                  {disabled && <View style={styles.overlay} />}
                 </TouchableOpacity>
               );
             })}
@@ -445,10 +840,10 @@ const SelectTimeSlot = ({ navigation, route }) => {
     };
 
     return (
-      <View>
-        {renderGroup('MORNING')}
-        {renderGroup('AFTERNOON')}
-        {renderGroup('EVENING')}
+      <View style={styles.slotsWrapper}>
+        {renderCategory('MORNING', categorized.MORNING)}
+        {renderCategory('AFTERNOON', categorized.AFTERNOON)}
+        {renderCategory('EVENING', categorized.EVENING)}
       </View>
     );
   };
@@ -499,73 +894,28 @@ const SelectTimeSlot = ({ navigation, route }) => {
     );
   };
 
-  const BookingSuccessModal = () => {
-    console.log('BookingSuccessModal rendering, showSuccessModal:', showSuccessModal, 'bookingData:', bookingData);
+  const renderBookingSuccessModal = () => {
+    console.log('renderBookingSuccessModal, showSuccessModal:', showSuccessModal, 'bookingData:', !!bookingData);
 
-    if (!showSuccessModal || !bookingData) {
-      console.log('Modal not showing because:', { showSuccessModal, hasBookingData: !!bookingData });
-      return null;
-    }
+    if (!showSuccessModal || !bookingData) return null;
 
-    const services = bookingData.items || [];
+    const bookingItems = bookingData.items || [];
 
     const renderServiceItem = (item, index) => {
-      if (!item || !item.service) return null;
-
+      if (!item) return null;
+      const name = item.name || item.service?.name || `Item #${item.id || index}`;
       return (
         <View key={`service-${item.id || index}`} style={styles.serviceItem}>
-          <Text style={styles.serviceName}>
-            {item.service.name || `Service #${item.id}`}
-          </Text>
-          {/* <Text style={styles.serviceQuantity}>x{item.quantity || 1}</Text> */}
+          <Text style={styles.serviceName}>{name}</Text>
+          <Text style={styles.serviceQuantity}>x{item.quantity || 1}</Text>
         </View>
       );
     };
 
-    const formatDateTime = (dateString) => {
-      if (!dateString) return 'N/A';
-      try {
-        const date = new Date(dateString);
-        if (isNaN(date.getTime())) return 'Invalid date';
-        return date.toLocaleString('en-IN', {
-          day: 'numeric',
-          month: 'short',
-          year: 'numeric',
-          hour: '2-digit',
-          minute: '2-digit',
-          hour12: true,
-          timeZone: 'Asia/Kolkata'
-        });
-      } catch (error) {
-        console.error('Error formatting date:', error);
-        return 'Date error';
-      }
-    };
-
-    const formatTimeRange = (startDateString, endDateString) => {
-      if (!startDateString || !endDateString) return 'N/A';
-      const startDate = new Date(startDateString);
-      const endDate = new Date(endDateString);
-
-      const dateStr = startDate.toLocaleDateString('en-IN', {
-        day: 'numeric',
-        month: 'short',
-        year: 'numeric'
-      });
-
-      const startTime = startDate.toLocaleTimeString('en-IN', {
-        hour: '2-digit',
-        minute: '2-digit',
-        hour12: true
-      });
-
-      const endTime = endDate.toLocaleTimeString('en-IN', {
-        hour: '2-digit',
-        minute: '2-digit',
-        hour12: true
-      });
-
-      return `${dateStr}, ${startTime} - ${endTime}`;
+    const formatTimeRange = (start, end) => {
+      if (!start || !end) return 'Time not specified';
+      // start/end are strings like "11:00 AM", "12:00 PM" — just show them directly
+      return `${start} - ${end}`;
     };
 
     return (
@@ -609,8 +959,8 @@ const SelectTimeSlot = ({ navigation, route }) => {
               <View style={styles.detailSection}>
                 <Text style={styles.sectionTitle}>Services</Text>
                 <View style={styles.servicesList}>
-                  {services.length > 0 ? (
-                    services.map((item, index) => renderServiceItem(item, index))
+                  {bookingItems.length > 0 ? (
+                    bookingItems.map((item, index) => renderServiceItem(item, index))
                   ) : (
                     <Text style={styles.noServicesText}>No services selected</Text>
                   )}
@@ -622,22 +972,13 @@ const SelectTimeSlot = ({ navigation, route }) => {
                 <Text style={styles.detailValue}>{bookingData.store?.name || 'N/A'}</Text>
               </View>
 
-              {/* <View style={styles.detailRow}>
-                <Text style={styles.detailLabel}>Distance:</Text>
-                <Text style={styles.detailValue}>{bookingData.store?.distance || 'N/A'}</Text>
-              </View> */}
-
               <View style={styles.detailRow}>
                 <Text style={styles.detailLabel}>Pickup Time:</Text>
                 <Text style={styles.detailValue}>
-                  {bookingData.pickupSlot?.start && bookingData.pickupSlot?.end
-                    ? formatTimeRange(bookingData.pickupSlot.start, bookingData.pickupSlot.end)
-                    : 'Time not specified'}
+                  {formatTimeRange(bookingData.pickupSlot?.start, bookingData.pickupSlot?.end)}
                 </Text>
               </View>
             </View>
-
-
 
             <TouchableOpacity
               style={styles.closeButton}
@@ -656,7 +997,7 @@ const SelectTimeSlot = ({ navigation, route }) => {
 
   return (
     <>
-      <BookingSuccessModal />
+      {renderBookingSuccessModal()}
       <SafeAreaView style={styles.container}>
         <ScrollView
           contentContainerStyle={styles.scrollContent}
@@ -667,8 +1008,102 @@ const SelectTimeSlot = ({ navigation, route }) => {
 
 
           {renderServiceDetails()}
-          <View style={{ marginTop: 20 }}>
-            {/* <Text style={styles.serviceName}>{services.map(s => s.title || 'Laundry Service').join(', ')}</Text> */}
+
+          <View style={styles.addressSelectorsContainer}>
+            {/* ── PICKUP ── */}
+            <View style={styles.addressBox}>
+              <View style={styles.addressBoxHeader}>
+                <Text style={styles.addressBoxLabel}>PICKUP</Text>
+                {pickupPincodeStatus === 'checking' && (
+                  <View style={styles.pincodeStatusBadge}>
+                    <ActivityIndicator size="small" color={colors.primary} />
+                    <Text style={styles.pincodeStatusText}>Checking...</Text>
+                  </View>
+                )}
+                {pickupPincodeStatus === 'serviceable' && (
+                  <View style={[styles.pincodeStatusBadge, styles.pincodeServiceable]}>
+                    <Ionicons name="checkmark-circle" size={14} color="#4CAF50" />
+                    <Text style={[styles.pincodeStatusText, { color: '#4CAF50' }]}>Serviceable</Text>
+                  </View>
+                )}
+                {pickupPincodeStatus === 'not_serviceable' && (
+                  <View style={[styles.pincodeStatusBadge, styles.pincodeNotServiceable]}>
+                    <Ionicons name="close-circle" size={14} color="#FF4444" />
+                    <Text style={[styles.pincodeStatusText, { color: '#FF4444' }]}>Not Serviceable</Text>
+                  </View>
+                )}
+              </View>
+              <TouchableOpacity
+                style={[
+                  styles.addressSelector,
+                  pickupPincodeStatus === 'not_serviceable' && styles.addressSelectorError
+                ]}
+                onPress={() => { setAddressPickerType('pickup'); setShowAddressModal(true); }}
+              >
+                <Ionicons
+                  name="location"
+                  size={24}
+                  color={pickupPincodeStatus === 'not_serviceable' ? '#FF4444' : colors.primary}
+                  style={styles.addressIcon}
+                />
+                <View style={styles.addressTextContainer}>
+                  <Text style={styles.addressPlaceholder}>PICKUP ADDRESS</Text>
+                  <Text style={styles.addressValue} numberOfLines={2}>
+                    {pickupAddress ? formatAddressLine(pickupAddress) : 'Select a pickup address'}
+                  </Text>
+                </View>
+                <Ionicons name="chevron-forward" size={16} color={colors.secondaryText} />
+              </TouchableOpacity>
+            </View>
+
+            {/* ── DELIVERY ── */}
+            <View style={styles.addressBox}>
+              <View style={styles.addressBoxHeader}>
+                <Text style={styles.addressBoxLabel}>DELIVERY</Text>
+                {deliveryPincodeStatus === 'checking' && (
+                  <View style={styles.pincodeStatusBadge}>
+                    <ActivityIndicator size="small" color={colors.primary} />
+                    <Text style={styles.pincodeStatusText}>Checking...</Text>
+                  </View>
+                )}
+                {deliveryPincodeStatus === 'serviceable' && (
+                  <View style={[styles.pincodeStatusBadge, styles.pincodeServiceable]}>
+                    <Ionicons name="checkmark-circle" size={14} color="#4CAF50" />
+                    <Text style={[styles.pincodeStatusText, { color: '#4CAF50' }]}>Serviceable</Text>
+                  </View>
+                )}
+                {deliveryPincodeStatus === 'not_serviceable' && (
+                  <View style={[styles.pincodeStatusBadge, styles.pincodeNotServiceable]}>
+                    <Ionicons name="close-circle" size={14} color="#FF4444" />
+                    <Text style={[styles.pincodeStatusText, { color: '#FF4444' }]}>Not Serviceable</Text>
+                  </View>
+                )}
+              </View>
+              <TouchableOpacity
+                style={[
+                  styles.addressSelector,
+                  deliveryPincodeStatus === 'not_serviceable' && styles.addressSelectorError
+                ]}
+                onPress={() => { setAddressPickerType('delivery'); setShowAddressModal(true); }}
+              >
+                <Ionicons
+                  name="location"
+                  size={24}
+                  color={deliveryPincodeStatus === 'not_serviceable' ? '#FF4444' : colors.primary}
+                  style={styles.addressIcon}
+                />
+                <View style={styles.addressTextContainer}>
+                  <Text style={styles.addressPlaceholder}>DELIVERY ADDRESS</Text>
+                  <Text style={styles.addressValue} numberOfLines={2}>
+                    {deliveryAddress ? formatAddressLine(deliveryAddress) : 'Select a delivery address'}
+                  </Text>
+                </View>
+                <Ionicons name="chevron-forward" size={16} color={colors.secondaryText} />
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          <View style={{ marginTop: 8 }}>
             <Text style={styles.serviceDescription}>Select a preferred date and time slot</Text>
           </View>
           <Text style={styles.sectionTitle}>Select Date</Text>
@@ -685,52 +1120,7 @@ const SelectTimeSlot = ({ navigation, route }) => {
 
           <Text style={styles.sectionTitle}>Select Time Slot</Text>
           {renderTimeSlots()}
-          <View style={styles.expressContainer}>
-            <TouchableOpacity
-              style={styles.checkboxContainer}
-              onPress={() => setSelectedServiceType('3hr')}
-            >
-              <View style={[styles.checkbox, selectedServiceType === '3hr' && styles.checked]}>
-                {selectedServiceType === '3hr' && <View style={styles.radioInner} />}
-              </View>
-              <Text style={styles.expressText}>Priority Service (3 Hours)</Text>
-            </TouchableOpacity>
-            {selectedServiceType === '3hr' && (
-              <Text style={styles.expressNote}>Note:Priority Service (3 Hours) may have additional charges</Text>
-            )}
-          </View>
-
-          <View style={styles.expressContainer}>
-            <TouchableOpacity
-              style={styles.checkboxContainer}
-              onPress={() => setSelectedServiceType('9hr')}
-            >
-              <View style={[styles.checkbox, selectedServiceType === '9hr' && styles.checked]}>
-                {selectedServiceType === '9hr' && <View style={styles.radioInner} />}
-              </View>
-              <Text style={styles.expressText}>Same-Day Service (9 Hours)</Text>
-            </TouchableOpacity>
-            {selectedServiceType === '9hr' && (
-              <Text style={styles.expressNote}>Note:Same-Day Service (9 Hours) may have additional charges</Text>
-            )}
-          </View>
-
-          <View style={styles.expressContainer}>
-            <TouchableOpacity
-              style={styles.checkboxContainer}
-              onPress={() => setSelectedServiceType('24hr')}
-            >
-              <View style={[styles.checkbox, selectedServiceType === '24hr' && styles.checked]}>
-                {selectedServiceType === '24hr' && <View style={styles.radioInner} />}
-              </View>
-              <Text style={styles.expressText}>Next-Day Service (24 Hours)</Text>
-            </TouchableOpacity>
-            {selectedServiceType === '24hr' && (
-              <Text style={styles.expressNote}>Note:Next-Day Service (24 Hours) may have additional charges</Text>
-            )}
-          </View>
-
-          <View style={styles.expressContainer}>
+          <View style={[styles.expressContainer, { marginTop: 15 }]}>
             <TouchableOpacity
               style={styles.checkboxContainer}
               onPress={() => setSelectedServiceType('3day')}
@@ -740,9 +1130,6 @@ const SelectTimeSlot = ({ navigation, route }) => {
               </View>
               <Text style={styles.expressText}>Standard Service (3 Days)</Text>
             </TouchableOpacity>
-            {selectedServiceType === '3day' && (
-              <Text style={styles.expressNote}>Note: Standard service delivery within 3 days</Text>
-            )}
           </View>
           <View style={styles.confirmButtonContainer}>
             <TouchableOpacity
@@ -849,13 +1236,140 @@ const SelectTimeSlot = ({ navigation, route }) => {
           </View>
         </View>
       </Modal>
+
+      {/* Not Serviceable Modal */}
+      <Modal
+        transparent
+        visible={showNotServiceableModal}
+        animationType="fade"
+        onRequestClose={() => setShowNotServiceableModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.notServiceableModalContainer}>
+            <View style={styles.notServiceableIconContainer}>
+              <Ionicons name="location-outline" size={48} color="#FF4444" />
+            </View>
+            <Text style={styles.notServiceableTitle}>
+              {serviceableStore ? 'Store Available!' : 'Area Not Serviceable'}
+            </Text>
+            <Text style={styles.notServiceableSubtitle}>
+              {serviceableStore ? (
+                <>
+                  Pincode <Text style={{ fontWeight: '700', color: colors.primary }}>{notServiceablePincode}</Text> is serviced by our <Text style={{ fontWeight: '700', color: colors.primary }}>{serviceableStore.name}</Text> branch.
+                </>
+              ) : (
+                <>
+                  Sorry! Pincode{' '}
+                  <Text style={{ fontWeight: '700', color: colors.primary }}>{notServiceablePincode}</Text>
+                  {' '}is currently not in our service area for the selected store.
+                </>
+              )}
+            </Text>
+            <Text style={styles.notServiceableHint}>
+              {serviceableStore
+                ? 'Would you like to switch to this store to place your order?'
+                : 'Please check your address or select a different store.'
+              }
+            </Text>
+
+            {serviceableStore ? (
+              <View style={{ width: '100%', gap: 12 }}>
+                <TouchableOpacity
+                  style={styles.notServiceableButton}
+                  onPress={handleSwitchStore}
+                  disabled={bookingInProgress}
+                >
+                  {bookingInProgress ? (
+                    <ActivityIndicator color="#fff" size="small" />
+                  ) : (
+                    <Text style={styles.notServiceableButtonText}>Switch to {serviceableStore.name}</Text>
+                  )}
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.notServiceableButton, { backgroundColor: '#F0F0F0' }]}
+                  onPress={() => setShowNotServiceableModal(false)}
+                >
+                  <Text style={[styles.notServiceableButtonText, { color: '#666' }]}>Cancel</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <TouchableOpacity
+                style={styles.notServiceableButton}
+                onPress={() => setShowNotServiceableModal(false)}
+              >
+                <Text style={styles.notServiceableButtonText}>Choose Different Address</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={showAddressModal}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setShowAddressModal(false)}
+      >
+        <TouchableOpacity style={styles.modalOverlayAddress} onPress={() => setShowAddressModal(false)} activeOpacity={1}>
+          <View style={styles.addressModalContainer}>
+            <Text style={styles.addressModalTitle}>
+              Select {addressPickerType === 'pickup' ? 'Pickup' : 'Delivery'} Address
+            </Text>
+            <ScrollView style={styles.addressModalScroll}>
+              {userAddresses.length > 0 ? (
+                userAddresses.map((addr, index) => (
+                  <TouchableOpacity
+                    key={index}
+                    style={styles.addressOption}
+                    onPress={() => {
+                      if (addressPickerType === 'pickup') {
+                        setPickupAddress(addr);
+                        checkAddressPincode(addr, 'pickup');
+                      } else {
+                        setDeliveryAddress(addr);
+                        checkAddressPincode(addr, 'delivery');
+                      }
+                      setShowAddressModal(false);
+                    }}
+                  >
+                    <Ionicons name="location-outline" size={24} color={colors.primary} />
+                    <Text style={styles.addressOptionText} numberOfLines={3}>
+                      {formatAddressLine(addr)}
+                    </Text>
+                  </TouchableOpacity>
+                ))
+              ) : (
+                <Text style={styles.noAddressFoundText}>No saved addresses found.</Text>
+              )}
+            </ScrollView>
+
+            <TouchableOpacity
+              style={styles.addNewAddressButton}
+              onPress={() => {
+                setShowAddressModal(false);
+                navigation.navigate('MainTabs', {
+                  screen: 'Home',
+                  params: { screen: 'Address', params: { fromDeepLink: true } },
+                });
+              }}>
+              <Ionicons name="add-circle-outline" size={24} color={colors.primary} />
+              <Text style={styles.addNewAddressText}>Add New Address</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.addressModalCloseButton} onPress={() => setShowAddressModal(false)}>
+              <Text style={styles.addressModalCloseText}>Close</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
     </>
   );
 };
 
 const styles = StyleSheet.create({
   scrollContent: {
-    paddingBottom: 30,
+    paddingBottom: 20,
     paddingHorizontal: 5,
   },
   expressContainer: {
@@ -878,7 +1392,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   confirmButtonContainer: {
-
+    paddingBottom: 80, // Large padding to clear the bottom tab bar
+    marginTop: 10,
   },
   checked: {
     borderColor: colors.primary,
@@ -901,10 +1416,137 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
   },
   container: {
-    height: "95%",
+    height: "100%",
     backgroundColor: '#fff',
     paddingHorizontal: 10,
     paddingBottom: 20
+  },
+  addressSelectorsContainer: {
+    marginTop: 10,
+    marginBottom: 5,
+  },
+  addressBox: {
+    marginBottom: 10,
+  },
+  addressBoxHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 6,
+    marginLeft: 4,
+  },
+  addressBoxLabel: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#000',
+    textTransform: 'uppercase',
+  },
+  addressSelector: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F5F5F5',
+    padding: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'transparent',
+  },
+  addressSelectorError: {
+    borderColor: '#FF4444',
+    backgroundColor: '#FFF5F5',
+  },
+  addressIcon: {
+    marginRight: 10,
+  },
+  addressTextContainer: {
+    flex: 1,
+  },
+  addressPlaceholder: {
+    fontSize: 12,
+    color: colors.secondaryText,
+    marginBottom: 2,
+    textTransform: 'uppercase',
+  },
+  addressValue: {
+    fontSize: 14,
+    color: '#333',
+    fontWeight: '500',
+  },
+  // Pincode status badge styles
+  pincodeStatusBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 12,
+    backgroundColor: '#F0F0F0',
+    gap: 4,
+  },
+  pincodeServiceable: {
+    backgroundColor: '#E8F5E9',
+  },
+  pincodeNotServiceable: {
+    backgroundColor: '#FFEBEE',
+  },
+  pincodeStatusText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: colors.secondaryText,
+  },
+  // Not Serviceable Modal styles
+  notServiceableModalContainer: {
+    backgroundColor: '#fff',
+    borderRadius: 20,
+    padding: 28,
+    marginHorizontal: 24,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  notServiceableIconContainer: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: '#FFEBEE',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  notServiceableTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#333',
+    marginBottom: 12,
+    textAlign: 'center',
+  },
+  notServiceableSubtitle: {
+    fontSize: 14,
+    color: '#666',
+    textAlign: 'center',
+    lineHeight: 22,
+    marginBottom: 10,
+  },
+  notServiceableHint: {
+    fontSize: 12,
+    color: colors.secondaryText,
+    textAlign: 'center',
+    marginBottom: 24,
+    fontStyle: 'italic',
+  },
+  notServiceableButton: {
+    backgroundColor: colors.primary,
+    borderRadius: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 28,
+    alignSelf: 'stretch',
+    alignItems: 'center',
+  },
+  notServiceableButtonText: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: '700',
   },
 
   calendarHeader: {
@@ -935,7 +1577,9 @@ const styles = StyleSheet.create({
     borderRadius: 12,
   },
   selectedDateItem: {
-    backgroundColor: 'rgba(240, 131, 131, 0.2)',
+    backgroundColor: '#FFF0F0',
+    borderWidth: 1,
+    borderColor: '#FFE0E0',
   },
   dateCircle: {
     width: 36,
@@ -986,17 +1630,33 @@ const styles = StyleSheet.create({
   },
   selectedMonthText: {
     color: colors.primary,
-    fontWeight: '600',
+    fontWeight: '700',
+  },
+  slotsWrapper: {
+    paddingHorizontal: 5,
+  },
+  categoryContainer: {
+    marginBottom: 8,
+  },
+  categoryTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#888',
+    marginBottom: 4,
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+    paddingLeft: 2,
   },
   timeSlotsContainer: {
     padding: 15,
     paddingBottom: 30,
   },
   sectionTitle: {
-    fontSize: 18,
-    fontWeight: '600',
+    fontSize: 16,
+    fontWeight: '700',
     color: colors.primaryText,
-
+    marginTop: 0,
+    marginBottom: 4,
   },
   timeSlotsGrid: {
     flexDirection: 'row',
@@ -1020,18 +1680,18 @@ const styles = StyleSheet.create({
   },
   timeSlot: {
     width: '48%',
-    backgroundColor: colors.cardcolor,
+    backgroundColor: '#fff',
     borderRadius: 12,
-    paddingVertical: 12,
-    marginBottom: 15,
+    paddingVertical: 14,
+    marginBottom: 8,
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1.5,
-    borderColor: '#f0f0f0',
+    borderWidth: 1,
+    borderColor: '#eee',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
+    shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.05,
-    shadowRadius: 3,
+    shadowRadius: 5,
     elevation: 2,
   },
   selectedTimeSlot: {
@@ -1046,13 +1706,22 @@ const styles = StyleSheet.create({
     opacity: 0.6,
   },
   timeSlotText: {
-    color: colors.primaryText,
-    fontSize: 13,
-    fontWeight: '500',
+    color: '#333',
+    fontSize: 14,
+    fontWeight: '700',
+    letterSpacing: 0.2,
   },
   selectedTimeSlotText: {
     color: '#fff',
     fontWeight: '600',
+  },
+  pastTimeSlot: {
+    backgroundColor: '#f8f8f8',
+    borderColor: '#eeeeee',
+    opacity: 0.6,
+  },
+  pastTimeSlotText: {
+    color: '#aaaaaa',
   },
   confirmButton: {
     backgroundColor: colors.primary,
@@ -1409,6 +2078,73 @@ const styles = StyleSheet.create({
     color: colors.primary,
     fontSize: 15,
     fontWeight: '600',
+  },
+  modalOverlayAddress: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+  },
+  addressModalContainer: {
+    backgroundColor: '#fff',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    padding: 20,
+    maxHeight: '60%',
+  },
+  addressModalTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: colors.primaryText,
+    marginBottom: 15,
+    textAlign: 'center',
+  },
+  addressModalScroll: {
+    maxHeight: 300,
+  },
+  addressOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 15,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+  },
+  addressOptionText: {
+    fontSize: 14,
+    color: colors.primaryText,
+    marginLeft: 10,
+    flex: 1,
+    lineHeight: 20,
+  },
+  addNewAddressButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 15,
+    borderTopWidth: 1,
+    borderTopColor: '#f0f0f0',
+    marginTop: 5,
+  },
+  addNewAddressText: {
+    color: colors.primary,
+    fontSize: 16,
+    fontWeight: '600',
+    marginLeft: 10,
+  },
+  noAddressFoundText: {
+    textAlign: 'center',
+    padding: 20,
+    color: colors.secondaryText,
+  },
+  addressModalCloseButton: {
+    marginTop: 20,
+    padding: 15,
+    backgroundColor: '#f5f5f5',
+    borderRadius: 10,
+    alignItems: 'center',
+  },
+  addressModalCloseText: {
+    color: colors.primaryText,
+    fontWeight: '600',
+    fontSize: 16,
   },
 });
 

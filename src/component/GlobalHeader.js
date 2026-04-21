@@ -31,7 +31,7 @@ const GlobalHeader = ({ title, showBack = false }) => {
   };
 
   const handleCallPress = () => {
-    const phoneNumber = '+918143725252';
+    const phoneNumber = '+91 4079697735';
 
     Alert.alert(
       'Call Support',
@@ -69,18 +69,24 @@ const GlobalHeader = ({ title, showBack = false }) => {
       <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
       <View style={styles.headerContainer}>
 
-        <TouchableOpacity onPress={handleDrawerOpen} style={styles.iconButton}>
-          <Feather name="menu" size={24} color="white" />
-        </TouchableOpacity>
+        {showBack ? (
+          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.iconButton}>
+            <Ionicons name="arrow-back" size={24} color="white" />
+          </TouchableOpacity>
+        ) : (
+          <TouchableOpacity onPress={handleDrawerOpen} style={styles.iconButton}>
+            <Feather name="menu" size={24} color="white" />
+          </TouchableOpacity>
+        )}
 
 
         <Text style={styles.headerTitle}>{title}</Text>
 
         {currentRoute == 'Home' && (
           <View style={styles.rightIcons}>
-            <TouchableOpacity onPress={handleNotificationPress} style={styles.iconButton}>
+            {/* <TouchableOpacity onPress={handleNotificationPress} style={styles.iconButton}>
               <Ionicons name="notifications-outline" size={24} color="white" />
-            </TouchableOpacity>
+            </TouchableOpacity> */}
             <TouchableOpacity onPress={handleCallPress} style={styles.iconButton}>
               <Ionicons name="call-outline" size={24} color="white" />
             </TouchableOpacity>

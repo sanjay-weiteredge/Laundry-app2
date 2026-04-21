@@ -14,13 +14,15 @@ import Myorder from '../mainScreen/Myorder';
 import PrivacyPolicy from '../mainScreen/PrivacyPolicy';
 import HelpSupport from '../mainScreen/HelpSupport';
 import EditProfile from '../mainScreen/EditProfile';
+import CategorySelection from '../mainScreen/CategorySelection';
+import ItemSelection from '../mainScreen/ItemSelection';
 import GlobalHeader from '../component/GlobalHeader';
 import DrawerContent from '../component/DrawerContent';
 import { registerForPushNotificationsAsync } from '../services/notificationService';
 
 import Feather from '@expo/vector-icons/Feather';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import PackagesScreen from '../mainScreen/PackagesScreen';
+
 import NotificationScreen from '../mainScreen/NotificationScreen';
 import ServicePriceList from '../mainScreen/ServicePriceList';
 import NearByStore from '../mainScreen/NearByStore';
@@ -83,6 +85,20 @@ const HomeStack = ({ navigation }) => (
       options={{
         title: 'Notifications',
         headerTitleAlign: 'center',
+      }}
+    />
+    <HomeStackNavigator.Screen
+      name="CategorySelection"
+      component={CategorySelection}
+      options={{
+        headerShown: false,
+      }}
+    />
+    <HomeStackNavigator.Screen
+      name="ItemSelection"
+      component={ItemSelection}
+      options={{
+        headerShown: false,
       }}
     />
     <HomeStackNavigator.Screen
@@ -228,8 +244,7 @@ const CustomTabBar = ({ state, descriptors, navigation }) => {
                 return <Ionicons name="bag-handle-outline" size={24} color={color} />;
               case 'Whatsapp':
                 return <Ionicons name="logo-whatsapp" size={24} color={color} />;
-              case 'Packages':
-                return <Ionicons name="cube-outline" size={24} color={color} />;
+
               default:
                 return <Feather name="circle" size={24} color={color} />;
             }
@@ -293,16 +308,7 @@ const TabNavigator = () => {
           title: 'Whatsapp',
         }}
       />
-      <Tab.Screen
-        name="Packages"
-        component={PackagesScreen}
-        options={{
-          headerShown: true,
-          header: () => (
-            <GlobalHeader title="Packages" />
-          ),
-        }}
-      />
+
     </Tab.Navigator>
   );
 };

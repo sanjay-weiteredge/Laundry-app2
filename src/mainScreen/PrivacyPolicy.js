@@ -14,30 +14,79 @@ import colors from '../component/color';
 const PrivacyPolicy = ({ navigation }) => {
   const privacySections = [
     {
-      title: 'Information We Collect',
-      content: 'We collect information you provide directly to us, such as when you create an account, use our services, or contact us for support. This includes personal information like your name, email address, phone number, and service preferences.'
+      title: '1. Information We Collect',
+      content: 'We may collect the following types of information when you use our services:\n\na. Personal Information\n• Name\n• Phone number\n• Email address\n• Pickup and delivery address\n\nb. Order & Transaction Information\n• Service details (wash, dry clean, ironing, etc.)\n• Order history\n• Payment details (processed securely via third-party payment providers)\n\nc. Device & Usage Information\n• IP address\n• Device type and operating system\n• Browser type\n• App/website usage data\n\nd. Communication Data\n• Messages, feedback, or queries you share with us via email, phone, chat, or social media\n• Call recordings (if applicable, for quality and training purposes)'
     },
     {
-      title: 'How We Use Your Information',
-      content: 'We use the information we collect to provide, maintain, and improve our services, process transactions, send you technical notices and support messages, and communicate with you about products, services, and promotional offers.'
+      title: '2. How We Collect Information',
+      content: 'We collect information when:\n• You create an account or place an order\n• You contact us for support or inquiries\n• You browse our website or use our app\n• You interact with our advertisements or promotions\n\nWe may also receive limited data from third-party services such as payment providers or analytics tools.'
     },
     {
-      title: 'Information Sharing',
-      content: 'We do not sell, trade, or otherwise transfer your personal information to third parties without your consent, except as described in this policy. We may share your information with service providers who assist us in operating our business.'
+      title: '3. How We Use Your Information',
+      content: 'We use your information to:\n• Provide pickup, cleaning, and delivery services\n• Process payments and manage orders\n• Communicate order updates and service notifications\n• Improve our services and user experience\n• Respond to customer support requests\n• Send offers, promotions, or updates (you can opt out anytime)\n• Prevent fraud and ensure platform security'
     },
     {
-      title: 'Data Security',
-      content: 'We implement appropriate technical and organizational measures to protect your personal information against unauthorized access, alteration, disclosure, or destruction. However, no method of transmission over the internet is 100% secure.'
+      title: '4. Sharing of Information',
+      parts: [
+        { text: 'We may share your information with:\n\n• ' },
+        { text: 'Service partners', bold: true },
+        { text: ' (delivery personnel, laundry facilities) to fulfill your order\n• ' },
+        { text: 'Payment gateways', bold: true },
+        { text: ' to process transactions securely\n• ' },
+        { text: 'Technology providers', bold: true },
+        { text: ' (hosting, analytics, communication tools)\n• ' },
+        { text: 'Legal authorities', bold: true },
+        { text: ' when required by law\n\nWe do ' },
+        { text: 'not sell your personal information', bold: true },
+        { text: ' to third parties.' },
+      ]
     },
     {
-      title: 'Your Rights',
-      content: 'You have the right to access, update, or delete your personal information. You can also opt out of receiving marketing communications from us by following the unsubscribe instructions in our emails.'
+      title: '5. Third-Party Services',
+      content: 'We use trusted third-party services for:\n• Payment processing\n• Hosting and data storage\n• Analytics and performance tracking\n\nThese providers have their own privacy policies, and we encourage you to review them.'
     },
     {
-      title: 'Contact Us',
-      content: 'If you have any questions about this Privacy Policy, please contact us at privacy@laundryservice.com or call our customer support team.'
+      title: '6. Cookies & Tracking Technologies',
+      content: 'We may use cookies and similar technologies to:\n• Enhance your browsing experience\n• Remember your preferences\n• Analyze website traffic and usage\n\nYou can control cookie settings through your browser.'
+    },
+    {
+      title: '7. Data Security',
+      content: 'We take reasonable technical and organizational measures to protect your information from unauthorized access, loss, or misuse.\n\nHowever, no digital system is completely secure, and we cannot guarantee absolute security.'
+    },
+    {
+      title: '8. Data Retention',
+      content: 'We retain your information only as long as necessary to:\n• Provide our services\n• Maintain records for legal and operational purposes\n• Resolve disputes'
+    },
+    {
+      title: '9. Your Rights',
+      content: 'You have the right to:\n• Access and review your personal information\n• Update or correct your details\n• Request deletion of your account and data\n• Opt out of marketing communications\n\nTo exercise these rights, please contact us using the details below.'
+    },
+    {
+      title: "10. Children's Privacy",
+      content: 'Our services are intended for users who are at least 18 years old.\nWe do not knowingly collect data from minors.'
+    },
+    {
+      title: '11. Changes to This Privacy Policy',
+      content: 'We may update this Privacy Policy from time to time.\nAny changes will be posted on this page with an updated effective date.'
+    },
+    {
+      title: '12. Contact Us',
+      content: 'If you have any questions, concerns, or requests regarding this Privacy Policy, please contact us:\n\n📧 Email: support@thelaundryguyz.com\n📞 Phone: +91 4079697735'
     }
   ];
+
+  const renderContent = (section) => {
+    if (section.parts) {
+      return (
+        <Text style={styles.sectionContent}>
+          {section.parts.map((part, i) => (
+            <Text key={i} style={part.bold ? styles.boldText : null}>{part.text}</Text>
+          ))}
+        </Text>
+      );
+    }
+    return <Text style={styles.sectionContent}>{section.content}</Text>;
+  };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -45,20 +94,20 @@ const PrivacyPolicy = ({ navigation }) => {
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.policyContainer}>
-          <View style={styles.lastUpdated}>
-            <Text style={styles.lastUpdatedText}>Last Updated: November 2024</Text>
-          </View>
+          {/* <View style={styles.lastUpdated}>
+            <Text style={styles.lastUpdatedText}>Last Updated: March 2025</Text>
+          </View> */}
 
           <View style={styles.introSection}>
             <Text style={styles.introText}>
-              At Laundry Service, we are committed to protecting your privacy. This Privacy Policy explains how we collect, use, and safeguard your personal information when you use our mobile application and services.
+              Welcome to The Laundry Guyz ("we", "our", "us").{"\n"}We are committed to protecting your privacy and ensuring a safe and seamless experience when you use our website and services.{"\n"}This Privacy Policy explains how we collect, use, and safeguard your information.
             </Text>
           </View>
 
           {privacySections.map((section, index) => (
             <View key={index} style={styles.section}>
               <Text style={styles.sectionTitle}>{section.title}</Text>
-              <Text style={styles.sectionContent}>{section.content}</Text>
+              {renderContent(section)}
             </View>
           ))}
 
@@ -123,13 +172,17 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     fontSize: 18,
-    fontWeight: '600',
+    fontWeight: '700',
     color: colors.primaryText,
     marginBottom: 12,
   },
   sectionContent: {
     fontSize: 16,
     lineHeight: 24,
+    color: colors.primaryText,
+  },
+  boldText: {
+    fontWeight: '700',
     color: colors.primaryText,
   },
   footer: {

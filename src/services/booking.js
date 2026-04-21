@@ -1,32 +1,41 @@
 import axios from 'axios';
-import { API } from './apiRequest';
+import apiClient, { API } from './apiRequest';
 
-export const getTimeSlots = async (date, serviceId, token) => {
+export const getTimeSlots = async (dateStr, serviceId, token) => {
   try {
+    const payload = {
+      "Keys": "PREFIX,PICKUP_RANGE,REFER_FREND_ENABLE,REFER_ORDER_DISCOUNT,DELVERYDATE_SLOTS,PICKUP_SLOTS,LOYALTY_POINT_ENABLE,DEFAULT_DELIVERYDATE,EXPRESS_DELIVERYDATE,DEFAULT_PICKUPDATE,ENABLE_EXPRESS_MODE,EXPRESS_PRICELIST"
+    };
 
-
-    if (!token) {
-      throw new Error('No authentication token provided');
-    }
-
-    const response = await axios.get(`${API}/booking/time-slots`, {
-      params: { date, serviceId },
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Accept': 'application/json',
-      },
-      timeout: 10000,
+    // The interceptor automatically attaches the current contextId and token
+    const response = await apiClient.post(`appConfigProperties/properties`, payload, {
+      params: { type: 'SALESORDER' }
     });
 
     console.log('Time slots API Response:', response.data);
 
-    if (response.data && response.data.success) {
-      return response.data.data;
+    if (response.data && response.data.PICKUP_SLOTS) {
+      // Convert the comma-separated string "09:00 AM - 10:00 AM,..." into the array format expected by the frontend
+      const slotsString = response.data.PICKUP_SLOTS;
+      const parsedSlots = slotsString.split(',').map(slotStr => {
+        const trimmed = slotStr.trim();
+        const parts = trimmed.split('-');
+
+        return {
+          start: parts[0] ? parts[0].trim() : trimmed,
+          end: parts[1] ? parts[1].trim() : trimmed,
+          display: trimmed,
+          isAvailable: true // Assuming all listed slots are generally available for now
+        };
+      }).filter(s => s.display.length > 0);
+
+      return parsedSlots;
     } else {
-      throw new Error(response.data?.message || 'Failed to fetch time slots');
+      console.warn('PICKUP_SLOTS missing from config properties');
+      return [];
     }
   } catch (error) {
-
+    console.error('Error calling config properties for slots:', error?.response?.data || error.message);
     throw error;
   }
 };

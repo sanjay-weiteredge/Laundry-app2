@@ -14,10 +14,12 @@ import {
   StatusBar,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Location from 'expo-location';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import colors from '../component/color';
-import { fetchAddresses, createAddress, updateAddress, deleteAddress, setDefaultAddress } from '../services/address';
+import { fetchUserAddresses, addUserAddress, updateUserAddress, deleteUserAddress, setDefaultUserAddress } from '../services/addressService';
+import { getPincodeStatus } from '../services/configService';
 
 const ADDRESS_LABELS = ['Home', 'Work', 'Other'];
 const REQUIRED_FIELDS = ['fullName', 'phone', 'pincode', 'state', 'city', 'house', 'street'];
@@ -60,24 +62,143 @@ const Addresss = ({ navigation }) => {
   const [showActionSheet, setShowActionSheet] = useState(false);
   const [selectedAddressId, setSelectedAddressId] = useState(null);
   const [selectedAddress, setSelectedAddress] = useState(null);
+  // serviceabilityMap: { [addressId]: 'checking' | 'serviceable' | 'not_serviceable' | 'unknown' }
+  const [serviceabilityMap, setServiceabilityMap] = useState({});
+
+  /**
+   * checkAllPincodes — MUST be defined BEFORE fetchSavedAddresses
+   * so the closure captures the real function reference (not undefined).
+   */
+  const checkAllPincodes = useCallback(async (addresses) => {
+    if (!addresses || addresses.length === 0) return;
+
+    // Immediately mark all as 'checking' or 'unknown'
+    const initialMap = {};
+    addresses.forEach((addr) => {
+      const id = getAddressIdentifier(addr) ?? `idx-${Math.random()}`;
+      const pincode = String(
+        addr?.pincode || addr?.postalCode || addr?.postal_code || addr?.zip_code || addr?.zip || ''
+      ).trim();
+      console.log(`[Pincode Check] Address ID: ${id}, Pincode: "${pincode}"`);
+      if (pincode.length === 6) {
+        initialMap[id] = 'checking';
+      } else {
+        initialMap[id] = 'unknown';
+        console.warn(`[Pincode Check] Skipping ${id} — pincode "${pincode}" is not 6 digits`);
+      }
+    });
+    setServiceabilityMap(initialMap);
+
+    // Check each pincode in parallel
+    const checks = addresses.map(async (addr) => {
+      const id = getAddressIdentifier(addr) ?? `idx-${Math.random()}`;
+      const pincode = String(
+        addr?.pincode || addr?.postalCode || addr?.postal_code || addr?.zip_code || addr?.zip || ''
+      ).trim();
+      if (pincode.length !== 6) return;
+
+      try {
+        const data = await getPincodeStatus(pincode);
+        console.log(`[Pincode Check] API response for "${pincode}":`, JSON.stringify(data));
+
+        // Response: { "9569": "500072, 501504, ...", assaignStoreId: 9569 }
+        let serviceablePincodes = '';
+        if (data) {
+          const storeKey = Object.keys(data).find((k) => k !== 'assaignStoreId');
+          if (storeKey) serviceablePincodes = data[storeKey] || '';
+        }
+
+        const pincodeList = serviceablePincodes
+          .split(',')
+          .map((p) => p.trim())
+          .filter(Boolean);
+
+        console.log(`[Pincode Check] Serviceable list: [${pincodeList.join(', ')}]`);
+        const isServiceable = pincodeList.includes(pincode);
+        console.log(`[Pincode Check] "${pincode}" serviceable: ${isServiceable}`);
+
+        setServiceabilityMap((prev) => ({
+          ...prev,
+          [id]: isServiceable ? 'serviceable' : 'not_serviceable',
+        }));
+      } catch (err) {
+        console.warn(`[Pincode Check] API failed for "${pincode}":`, err?.message);
+        setServiceabilityMap((prev) => ({ ...prev, [id]: 'unknown' }));
+      }
+    });
+
+    await Promise.allSettled(checks);
+  }, []);
 
   const fetchSavedAddresses = useCallback(async () => {
     try {
       setLoadingAddresses(true);
-      const addresses = await fetchAddresses();
-      // console.log('Addresses:', addresses);
-      if (Array.isArray(addresses)) {
-        setSavedAddresses(addresses);
-      } else {
-        setSavedAddresses([]);
+      const userDataStr = await AsyncStorage.getItem('userData');
+      if (!userDataStr) return;
+      const localData = JSON.parse(userDataStr);
+
+      const { getUserProfile } = require('../services/userService');
+      const response = await getUserProfile(localData.id);
+
+      let foundAddresses = [];
+
+      if (response && response.userInfo) {
+        const info = response.userInfo;
+
+        const formatAddress = (addr, type, customType) => {
+          if (!addr) return null;
+          if (typeof addr === 'string') {
+            if (addr.trim() === '') return null;
+            return {
+              id: Math.random().toString(),
+              fullName: info.name || 'User',
+              phone: info.phoneNumber || '',
+              house: addr,
+              street: '',
+              city: '',
+              state: '',
+              pincode: '',
+              label: type,
+              addressType: customType
+            };
+          }
+          // Capture every possible pincode field from the API object
+          return {
+            id: addr.id || Math.random().toString(),
+            fullName: addr.name || info.name || 'User',
+            phone: addr.phoneNumber1 || info.phoneNumber || '',
+            house: addr.addressLine || '',
+            street: addr.addressLine2 || addr.area || '',
+            city: addr.city || '',
+            state: addr.state || addr.stateName || '',
+            pincode: addr.zip || addr.pincode || addr.postalCode || addr.postal_code || '',
+            label: type,
+            addressType: customType
+          };
+        };
+
+        const addr1 = formatAddress(info.address1, 'Home', 'address');
+        if (addr1 && (addr1.house || addr1.street)) foundAddresses.push(addr1);
+
+        const addr2 = formatAddress(info.address2, 'Work', 'address2');
+        if (addr2 && (addr2.house || addr2.street)) foundAddresses.push(addr2);
+
+        const userAddr = formatAddress(info.address, 'Default');
+        if (userAddr && (userAddr.house || userAddr.street)) foundAddresses.push({ ...userAddr, id: 'user_addr' });
       }
+
+      console.log('[Addresses] Processed:', JSON.stringify(foundAddresses, null, 2));
+      setSavedAddresses(foundAddresses);
+
+      // Now run serviceability check (works because checkAllPincodes is declared above)
+      checkAllPincodes(foundAddresses);
+
     } catch (error) {
-      console.error('Error fetching addresses:', error);
-      Alert.alert('Address Error', error?.message || 'Unable to load addresses. Please try again.');
+      console.error('Error fetching addresses from profile:', error);
     } finally {
       setLoadingAddresses(false);
     }
-  }, []);
+  }, [checkAllPincodes]);
 
   useFocusEffect(
     useCallback(() => {
@@ -249,7 +370,11 @@ const Addresss = ({ navigation }) => {
     }
 
     try {
-      await deleteAddress(selectedAddressId);
+      const userDataStr = await AsyncStorage.getItem('userData');
+      if (!userDataStr) return;
+      const localData = JSON.parse(userDataStr);
+
+      await deleteUserAddress(localData.id, selectedAddressId);
       setSavedAddresses((prev) =>
         prev.filter((address) => getAddressIdentifier(address) !== selectedAddressId)
       );
@@ -274,7 +399,11 @@ const Addresss = ({ navigation }) => {
     }
 
     try {
-      await setDefaultAddress(selectedAddressId);
+      const userDataStr = await AsyncStorage.getItem('userData');
+      if (!userDataStr) return;
+      const localData = JSON.parse(userDataStr);
+
+      await setDefaultUserAddress(localData.id, selectedAddressId);
       await fetchSavedAddresses();
       setShowSetDefaultModal(false);
       setSelectedAddressId(null);
@@ -311,86 +440,53 @@ const Addresss = ({ navigation }) => {
       return;
     }
 
-    const timestamp = new Date().toISOString();
-
-    if (editingAddressId) {
-      const updatePayload = {
-        fullName: form.fullName.trim(),
-        phone: form.phone.trim(),
-        altPhone: form.altPhone?.trim() || '',
-        pincode: form.pincode.trim(),
-        state: form.state.trim(),
-        city: form.city.trim(),
-        house: form.house.trim(),
-        street: form.street.trim(),
-        landmark: form.landmark?.trim() || '',
-        label: form.label,
-        instructions: form.instructions?.trim() || '',
-        latitude: form.latitude ? parseFloat(form.latitude) : null,
-        longitude: form.longitude ? parseFloat(form.longitude) : null,
-        postal_code: form.pincode.trim() || null,
-        country: null,
-        isDefault: false,
-      };
-
-      try {
-        setSavingAddress(true);
-        const updatedAddress = await updateAddress(editingAddressId, updatePayload);
-        if (updatedAddress) {
-          setSavedAddresses((prev) =>
-            prev.map((address) =>
-              getAddressIdentifier(address) === editingAddressId
-                ? { ...updatedAddress, coords }
-                : address
-            )
-          );
-        } else {
-          await fetchSavedAddresses();
-        }
-        setMode('list');
-        resetForm();
-      } catch (error) {
-        console.error('Error updating address:', error);
-      } finally {
-        setSavingAddress(false);
-      }
-      return;
-    }
-
-    const payload = {
-      fullName: form.fullName.trim(),
-      phone: form.phone.trim(),
-      altPhone: form.altPhone?.trim() || '',
-      pincode: form.pincode.trim(),
-      state: form.state.trim(),
-      city: form.city.trim(),
-      house: form.house.trim(),
-      street: form.street.trim(),
-      landmark: form.landmark?.trim() || '',
-      label: form.label,
-      instructions: form.instructions?.trim() || '',
-      latitude: form.latitude ? parseFloat(form.latitude) : null,
-      longitude: form.longitude ? parseFloat(form.longitude) : null,
-      postal_code: form.pincode.trim() || null,
-      country: null,
-      isDefault: false,
-    };
-
     try {
       setSavingAddress(true);
-      const newAddress = await createAddress(payload);
-      if (newAddress) {
-        setSavedAddresses((prev) => [
-          { ...newAddress, coords },
-          ...prev,
-        ]);
-      } else {
+      const userDataStr = await AsyncStorage.getItem('userData');
+      if (!userDataStr) return;
+      const localData = JSON.parse(userDataStr);
+
+      const payload = {
+        addressLine2: `${form.house}, ${form.street}`,
+        area: form.street,
+        city: form.city,
+        state: form.state,
+        zip: form.pincode,
+        country: "India",
+        location: {
+          lat: form.latitude ? parseFloat(form.latitude) : 0,
+          lon: form.longitude ? parseFloat(form.longitude) : 0,
+          name: form.city
+        }
+      };
+
+      if (editingAddressId) {
+        const existingAddress = savedAddresses.find(a => getAddressIdentifier(a) === editingAddressId);
+        const addressType = existingAddress?.addressType || 'address';
+        console.log(`[AddressUI] Updating address: ${editingAddressId} of type: ${addressType}`);
+
+        await updateUserAddress(localData.id, editingAddressId, payload, addressType);
         await fetchSavedAddresses();
+      } else {
+        const hasAddress1 = savedAddresses.some(a => a.addressType === 'address');
+        const addressType = hasAddress1 ? 'address2' : 'address';
+        console.log(`[AddressUI] Adding new address as type: ${addressType}`);
+
+        const response = await addUserAddress(localData.id, payload, addressType);
+
+        if (response.success || response.sucss) {
+          console.log('[AddressUI] Address added successfully');
+          await fetchSavedAddresses();
+        } else {
+          console.warn('[AddressUI] Address save response unsuccessful:', response);
+        }
       }
+
       setMode('list');
       resetForm();
     } catch (error) {
       console.error('Error saving address:', error);
+      Alert.alert('Error', 'Failed to save address. Please try again.');
     } finally {
       setSavingAddress(false);
     }
@@ -416,10 +512,45 @@ const Addresss = ({ navigation }) => {
     </View>
   );
 
+  const renderServiceabilityBadge = (addressId) => {
+    const status = serviceabilityMap[addressId];
+    if (!status || status === 'unknown') return null;
+
+    if (status === 'checking') {
+      return (
+        <View style={styles.serviceabilityBadge}>
+          <ActivityIndicator size={10} color="#888" />
+          <Text style={styles.serviceabilityChecking}>Checking serviceability...</Text>
+        </View>
+      );
+    }
+
+    if (status === 'serviceable') {
+      return (
+        <View style={[styles.serviceabilityBadge, styles.serviceableBadge]}>
+          <Ionicons name="checkmark-circle" size={14} color="#2ECC71" />
+          <Text style={styles.serviceableText}>Serviceable</Text>
+        </View>
+      );
+    }
+
+    if (status === 'not_serviceable') {
+      return (
+        <View style={[styles.serviceabilityBadge, styles.notServiceableBadge]}>
+          <Ionicons name="close-circle" size={14} color="#E74C3C" />
+          <Text style={styles.notServiceableText}>Not Serviceable</Text>
+        </View>
+      );
+    }
+
+    return null;
+  };
+
   const renderSavedAddressCard = (address, index) => {
-    const cardKey =
+    const addressId =
       getAddressIdentifier(address) ??
       (address?.createdAt ? `created-${address.createdAt}` : `address-${index}`);
+    const cardKey = addressId;
     const name = address?.fullName || address?.full_name || address?.name || 'Saved Address';
     const phone = address?.phone || address?.phone_number || address?.phoneNumber;
     const altPhone =
@@ -439,9 +570,17 @@ const Addresss = ({ navigation }) => {
         : address.label === 'Other'
           ? 'location-outline'
           : 'home-outline';
+    const serviceStatus = serviceabilityMap[addressId];
 
     return (
-      <View key={cardKey} style={[styles.savedCard, isDefault && styles.defaultCard]}>
+      <View
+        key={cardKey}
+        style={[
+          styles.savedCard,
+          isDefault && styles.defaultCard,
+          serviceStatus === 'not_serviceable' && styles.notServiceableCard,
+        ]}
+      >
         <View style={styles.savedCardHeader}>
           <View style={styles.savedCardTitle}>
             <Ionicons name={iconName} size={18} color={colors.primary} />
@@ -456,6 +595,10 @@ const Addresss = ({ navigation }) => {
             </TouchableOpacity>
           </View>
         </View>
+
+        {/* Serviceability Badge */}
+        {renderServiceabilityBadge(addressId)}
+
         {primaryLine ? <Text style={styles.savedCardLine} numberOfLines={2}>{primaryLine}</Text> : null}
         {secondaryLine ? <Text style={styles.savedCardLine} numberOfLines={2}>{secondaryLine}</Text> : null}
         {address.landmark ? (
@@ -463,6 +606,15 @@ const Addresss = ({ navigation }) => {
         ) : null}
         {phone ? <Text style={styles.savedCardMeta}>{phone}</Text> : null}
         {altPhone ? <Text style={styles.savedCardMeta}>{altPhone}</Text> : null}
+
+        {serviceStatus === 'not_serviceable' && (
+          <View style={styles.notServiceableWarning}>
+            <Ionicons name="alert-circle-outline" size={14} color="#E74C3C" />
+            <Text style={styles.notServiceableWarningText}>
+              This pincode is outside our current service area.
+            </Text>
+          </View>
+        )}
 
         <View style={styles.cardFooter}>
           <TouchableOpacity
@@ -991,6 +1143,67 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 6 },
     shadowRadius: 12,
     elevation: 3,
+    borderLeftWidth: 4,
+    borderLeftColor: 'transparent',
+  },
+  defaultCard: {
+    borderLeftColor: colors.primary,
+  },
+  notServiceableCard: {
+    borderLeftColor: '#E74C3C',
+    backgroundColor: '#FFF8F8',
+  },
+  // ── Serviceability Badge Row ──────────────────────────────
+  serviceabilityBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    borderRadius: 20,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    marginBottom: 8,
+    backgroundColor: 'rgba(0,0,0,0.04)',
+    gap: 5,
+  },
+  serviceableBadge: {
+    backgroundColor: 'rgba(46,204,113,0.12)',
+  },
+  notServiceableBadge: {
+    backgroundColor: 'rgba(231,76,60,0.1)',
+  },
+  serviceabilityChecking: {
+    fontSize: 11,
+    color: '#888',
+    fontWeight: '500',
+    marginLeft: 4,
+  },
+  serviceableText: {
+    fontSize: 11,
+    color: '#27AE60',
+    fontWeight: '700',
+  },
+  notServiceableText: {
+    fontSize: 11,
+    color: '#E74C3C',
+    fontWeight: '700',
+  },
+  // ── Inline warning strip below address lines ──────────────
+  notServiceableWarning: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(231,76,60,0.08)',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    marginTop: 6,
+    marginBottom: 4,
+    gap: 6,
+  },
+  notServiceableWarningText: {
+    fontSize: 12,
+    color: '#C0392B',
+    fontWeight: '500',
+    flex: 1,
   },
   savedCardHeader: {
     flexDirection: 'row',

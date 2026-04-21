@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { View, Text, StyleSheet, SafeAreaView, FlatList, ActivityIndicator, TouchableOpacity, RefreshControl } from 'react-native';
 import colors from '../component/color';
-import { getUserNotifications, markNotificationAsRead, markAllNotificationsAsRead } from '../services/userAuth';
+import { getUserNotifications, markNotificationAsRead, markAllNotificationsAsRead } from '../services/userService';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect } from '@react-navigation/native';
@@ -18,12 +18,15 @@ const NotificationScreen = () => {
     }
     setError(null);
     try {
-      const token = await AsyncStorage.getItem('userToken');
-      if (token) {
-        const response = await getUserNotifications(token);
-        if (response.success) {
-          setNotifications(response.data.notifications);
-        }
+      const profileStr = await AsyncStorage.getItem('userProfile');
+      const profile = profileStr ? JSON.parse(profileStr) : null;
+      const userInfoId = profile?.id;
+
+      if (userInfoId) {
+        const responseData = await getUserNotifications(userInfoId);
+        // Fabklean might return items directly or in a results field
+        const notifs = responseData.items || responseData || [];
+        setNotifications(notifs);
       } else {
         setError('You are not logged in.');
       }
@@ -51,14 +54,15 @@ const NotificationScreen = () => {
 
   const handleMarkAllAsRead = async () => {
     try {
-      const token = await AsyncStorage.getItem('userToken');
-      if (token) {
-        const response = await markAllNotificationsAsRead(token);
-        if (response.success) {
-          setNotifications(prevNotifications =>
-            prevNotifications.map(notification => ({ ...notification, isRead: true }))
-          );
-        }
+      const profileStr = await AsyncStorage.getItem('userProfile');
+      const profile = profileStr ? JSON.parse(profileStr) : null;
+      const userInfoId = profile?.id;
+
+      if (userInfoId) {
+        await markAllNotificationsAsRead(userInfoId);
+        setNotifications(prevNotifications =>
+          prevNotifications.map(notification => ({ ...notification, isRead: true }))
+        );
       }
     } catch (err) {
       console.error('Failed to mark all notifications as read', err);
@@ -67,18 +71,19 @@ const NotificationScreen = () => {
 
   const handleMarkAsRead = async (notificationId) => {
     try {
-      const token = await AsyncStorage.getItem('userToken');
-      if (token) {
-        const response = await markNotificationAsRead(token, notificationId);
-        if (response.success) {
-          setNotifications(prevNotifications =>
-            prevNotifications.map(notification =>
-              notification.id === notificationId
-                ? { ...notification, isRead: true }
-                : notification
-            )
-          );
-        }
+      const profileStr = await AsyncStorage.getItem('userProfile');
+      const profile = profileStr ? JSON.parse(profileStr) : null;
+      const userInfoId = profile?.id;
+
+      if (userInfoId) {
+        await markNotificationAsRead(userInfoId, notificationId);
+        setNotifications(prevNotifications =>
+          prevNotifications.map(notification =>
+            notification.id === notificationId
+              ? { ...notification, isRead: true }
+              : notification
+          )
+        );
       }
     } catch (err) {
       console.error('Failed to mark notification as read', err);

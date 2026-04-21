@@ -4,46 +4,9 @@ import colors from '../component/color';
 
 const ViewPricing = ({ navigation }) => {
 
-    // We can keep a simple loading state if we want to show something while "opening" or if we add future logic, 
-    // but for now, since it's just links, we might not strictly need it. 
-    // However, I'll keep the basic structure clean.
-
-    const openPdf = async (url) => {
-        try {
-            const supported = await Linking.canOpenURL(url);
-            if (supported) {
-                await Linking.openURL(url);
-            } else {
-                console.error("Don't know how to open this URL: " + url);
-                alert("Cannot open this URL");
-            }
-        } catch (error) {
-            console.error("An error occurred", error);
-        }
-    };
-
     return (
         <SafeAreaView style={styles.mainContainer}>
             <ScrollView contentContainerStyle={styles.content}>
-
-                {/* PDF Buttons Section */}
-                {/* <View style={styles.pdfSection}>
-                    <TouchableOpacity
-                        style={styles.pdfButton}
-                        onPress={() => openPdf('https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf')}
-                    >
-                        <Ionicons name="document-text-outline" size={24} color="#fff" />
-                        <Text style={styles.pdfButtonText}>Standard Pricing PDF</Text>
-                    </TouchableOpacity> */}
-
-                {/* <TouchableOpacity
-                        style={[styles.pdfButton, styles.premiumButton]}
-                        onPress={() => openPdf('https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf')}
-                    >
-                        <Ionicons name="document-text-outline" size={24} color="#fff" />
-                        <Text style={styles.pdfButtonText}>Premium Pricing PDF</Text>
-                    </TouchableOpacity> */}
-                {/* </View> */}
 
                 {/* Pricing Images */}
                 <View style={styles.imagesSection}>
@@ -76,9 +39,9 @@ const styles = StyleSheet.create({
     },
     content: {
         flexGrow: 1,
-        // justifyContent: 'center', // Removed to allow natural scrolling flow
         alignItems: 'center',
         paddingVertical: 20,
+        paddingBottom: 60,
     },
     pdfSection: {
         width: '100%',
