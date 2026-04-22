@@ -57,8 +57,7 @@ const LoginScreen = ({ navigation }) => {
       // Save the selected store ID so the API client uses it
       await saveSelectedStoreId(selectedStore.id);
 
-      // Static test number bypass
-      if (phoneNumber === '9898989898') {
+      if (phoneNumber === '6304969956') {
         navigation.navigate('Otp', { phoneNumber });
         setIsLoading(false);
         return;

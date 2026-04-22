@@ -19,9 +19,8 @@
         "foregroundImage": "./assets/ic_launcher-web.png",
         "backgroundColor": "#ffffff"
       },
-      "googleServicesFile": "./google-services.json",
       "edgeToEdgeEnabled": true,
-      "package": "com.bgwehgowcvgcg.TheLaundryGuyz"
+      "package": "com.thelaundryguyz.app"
     },
     "plugins": [
       "expo-notifications",
@@ -39,7 +38,7 @@
     },
     "extra": {
       "eas": {
-        "projectId": "aba331d1-dce2-42ce-969f-c7973eb82c3d"
+        "projectId": "100afbfd-a705-4c3e-a04a-087537836874"
       }
     }
   }
