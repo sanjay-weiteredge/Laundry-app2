@@ -1,5 +1,7 @@
 export const STORES = [
   { id: '11473', name: 'The LaundryGuyz - Tellapur' },
+  { id: '11474', name: 'Serilingampalle' },
+  { id: '11475', name: 'Nagavara' },
   { id: '11476', name: 'West Maredpally' },
   { id: '11477', name: 'Padma Rao Nagar' },
   { id: '11478', name: 'Yapral' },

@@ -6,10 +6,11 @@ import { getActivePosters } from '../services/poster';
 const { width } = Dimensions.get('window');
 
 const fallbackImages = [
-  require('../assests/poster/1.png'),
-  require('../assests/poster/2.png'),
-  require('../assests/poster/3.png'),
-  require('../assests/poster/4.png'),
+  require('../assests/poster/extra_polish_starch_options.jpeg'),
+  require('../assests/poster/free_home_pickup.jpeg'),
+  require('../assests/poster/Steam_Ironing_Offer.jpeg'),
+  require('../assests/poster/TLG_Wallet_20_offer.jpeg'),
+  require('../assests/poster/TLGwallet_30_offer.png')
 ];
 
 const AutoSwiper = ({ refreshKey }) => {

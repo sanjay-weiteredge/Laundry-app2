@@ -2,7 +2,7 @@
   "expo": {
     "name": "TheLaundryGuyz",
     "slug": "TheLaundryGuyz",
-    "version": "1.0.0",
+    "version": "1.0.3",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
@@ -20,7 +20,8 @@
         "backgroundColor": "#ffffff"
       },
       "edgeToEdgeEnabled": true,
-      "package": "com.thelaundryguyz.app"
+      "package": "com.thelaundryguyz.app",
+      "versionCode": 5
     },
     "plugins": [
       "expo-notifications",
@@ -38,7 +39,8 @@
     },
     "extra": {
       "eas": {
-        "projectId": "100afbfd-a705-4c3e-a04a-087537836874"
+        "_comment_previous_projectId": "100afbfd-a705-4c3e-a04a-087537836874",
+        "projectId": "d80ad59b-3ae9-4d22-9c2a-8c54e0e73223"
       }
     }
   }
